@@ -1,38 +1,83 @@
 <html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solar ESP32</title>
-<link rel="stylesheet" href="style.css"/>
-</head>
-<body>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Solar ESP32</title>
+        <link rel="stylesheet" href="style.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    </head>
+    <body>
 
-<h2>Solar CWU ESP32</h2>
+        <div class="topbar" id="title">Ogrzewanie</div>
 
-<div class="card">
-<div id="data">loading...</div>
-</div>
+        <div class="content" id="content">
+            <div id="Ogrzewanie">
+            </div>
+            <div id="Solary">
+                <div class="form">
+                    <div class="row">
+                        <label>Kolektor:</label>
+                        <input id="StK" type="text">
+                    </div>
+                    <div class="row">
+                        <label>Woda góra:</label>
+                        <input id="StWG" type="text">
+                    </div>
+                    <div class="row">
+                        <label>Woda dół:</label>
+                        <input id="StWD" type="text">
+                    </div>
+                    <div class="row">
+                        <label>ΔON:</label>
+                        <input id="don" type="number">
+                    </div>
 
-<h3>Ustawienia</h3>
+                    <div class="row">
+                        <label>ΔOFF:</label>
+                        <input id="doff" type="number">
+                    </div>
 
-ΔON: <input id="don" type="number"><br>
-ΔOFF: <input id="doff" type="number"><br>
-MAX CWU: <input id="max" type="number"><br>
+                    <div class="row">
+                        <label>MAX CWU:</label>
+                        <input id="max" type="number">
+                    </div>
 
-Tryb:
-<select id="mode">
-<option value="0">AUTO</option>
-<option value="1">ON</option>
-<option value="2">OFF</option>
-</select>
+                    <div class="row">
+                        <label>Tryb:</label>
+                        <select id="mode">
+                            <option value="0">AUTO</option>
+                            <option value="1">ON</option>
+                            <option value="2">OFF</option>
+                        </select>
+                    </div>
+                </div>
+                <br>
+                <button onclick="save()">Zapisz</button>
+                <button onclick="sendToGoogleForm()">Wyślij</button>
+            </div>
+            <div id="Wykres">
+                <canvas id="chart"></canvas>
+            </div>
+        </div>
 
-<br>
-<button onclick="save()">Zapisz</button>
-<script src="script.js"></script>
-<script>
+        <div class="bottom-nav">
+            <div class="nav-item active"
+                onclick="showPage('Ogrzewanie', this)">
+                <span class="icon">🔥</span>
+                Ogrzewanie
+            </div>
 
+            <div class="nav-item" onclick="showPage('Solary', this)">
+                <span class="icon">☀️</span>
+                Solary
+            </div>
 
-</script>
+            <div class="nav-item" onclick="showPage('Wykres', this)">
+                <span class="icon">📞</span>
+                Wykres
+            </div>
+        </div>
 
-</body>
+        <script src="script.js"></script>
+    </body>
 </html>
