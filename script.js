@@ -88,9 +88,7 @@ function sendToGoogleForm() {
 
 
 
-const CSV_URL =
-"https://api.allorigins.win/raw?url=" +
-encodeURIComponent("https://docs.google.com/spreadsheets/d/e/2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe/pub?output=csv");
+const CSV_URL ="https://docs.google.com/spreadsheets/d/e/2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe/pub?output=csv";
 
 let chart;
 
