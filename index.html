@@ -11,7 +11,44 @@
         <div class="topbar" id="title">Ogrzewanie</div>
 
         <div class="content" id="content">
+            <div id="data">Data</div>
             <div id="Ogrzewanie">
+                <div class="form">
+                    <div class="row">
+                        <label>Dom:</label>
+                        <input id="tD" type="text">
+                    </div>
+                    <div class="row">
+                        <label>Bufor góra:</label>
+                        <input id="BtG" type="text">
+                    </div>
+                    <div class="row">
+                        <label>Bufor dół:</label>
+                        <input id="BtD" type="text">
+                    </div>
+
+                    <h3>Ustawienia</h3>
+
+                    <div class="row">
+                        <label>Dom max:</label>
+                        <input id="tDmax" type="number">
+                    </div>
+
+                    <div class="row">
+                        <label>Mieszacz max:</label>
+                        <input id="tMmax" type="number">
+                    </div>
+
+                    <div class="row">
+                        <label>Tryb:</label>
+                        <select id="Op">
+                            <option value="0">OFF</option>
+                            <option value="1">ON</option>
+                        </select>
+                    </div>
+                </div>
+                <br>
+                <button onclick="save_co()">Zapisz</button>
             </div>
             <div id="Solary">
                 <div class="form">
@@ -27,6 +64,9 @@
                         <label>Woda dół:</label>
                         <input id="StWD" type="text">
                     </div>
+
+                    <h3>Ustawienia</h3>
+
                     <div class="row">
                         <label>ΔON:</label>
                         <input id="don" type="number">
@@ -36,7 +76,6 @@
                         <label>ΔOFF:</label>
                         <input id="doff" type="number">
                     </div>
-
                     <div class="row">
                         <label>MAX CWU:</label>
                         <input id="max" type="number">

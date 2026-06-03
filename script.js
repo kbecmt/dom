@@ -15,7 +15,17 @@ function load(){
    "Bufor góra : "+d.tbH+" °C<br>"+
    "Pompa Solary: "+(d.p?"ON":"OFF")+"<br>"+
    "Pompa Woda: "+(d.wp?"ON":"OFF")+"<br>"
-   tK.value="°C"; 
+   StK.value=d.StK+"°C"; 
+   StWG.value=d.StWG+"°C";
+   StWD.value=d.StWD+"°C"; 
+   BtG.value=d.BtG+"°C"; 
+   BtD.value=d.BtD+"°C"; 
+   tZ.value=d.tZ+"°C"; 
+   tD.value=d.tD+"°C"; 
+   tM.value=d.tM+"°C";
+   Sp.value=d.Sp+"°C"; 
+   Wp.value=d.Wp?"ON":"OFF"; 
+   Op.value=d.Op?"ON":"OFF"; 
    don.value=d.don;
    doff.value=d.doff;
    max.value=d.max;
@@ -69,7 +79,7 @@ function showPage(page, el) {
 // start
 showPage('Ogrzewanie', document.querySelector('.nav-item'));
 
-
+/*
 function sendToGoogleForm() {
   const url = "https://docs.google.com/forms/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse";
 
@@ -159,3 +169,4 @@ draw();
 
 // 🔄 AUTO UPDATE (co 5 sekund)
 setInterval(draw, 500000);
+*/
