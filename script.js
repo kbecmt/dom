@@ -5,7 +5,6 @@ function random10to50() {
 
 function load(){
  fetch('http://192.168.0.170/status'), {
-  method: 'POST',
   mode: 'no-cors'}
  .then(r=>r.json())
  .then(d=>{
@@ -47,7 +46,7 @@ function save(){
  fetch(`http://192.168.0.170/save?don=${don.value}&doff=${doff.value}&max=${max.value}&mode=${mode.value}`);
 }
 
-setInterval(load,5000);
+setInterval(load,10000);
 load();
 
 
