@@ -223,8 +223,7 @@ function random10to50() {
 }
 
 function load(){
- fetch('http://192.168.0.170/status'), {
-  mode: 'no-cors'}
+ fetch('http://192.168.0.170/status')
  .then(r=>r.json())
  .then(d=>{
    document.getElementById('data').innerHTML =
