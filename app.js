@@ -7,7 +7,8 @@ const API_BASE = "http://192.168.0.170";
 const state = {
     connected: false,
     pollingInterval: null,
-    simMode: false
+    simMode: false,
+    initialized: false
 };
 
 const sim = {
@@ -25,10 +26,18 @@ const sim = {
 
 // ============= INICJALIZACJA =============
 
-document.addEventListener('DOMContentLoaded', () => {
+window.initApp = () => {
+    if (state.initialized) return;
+    state.initialized = true;
+    
     setupTabs();
     setupEventListeners();
     checkConnection();
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Fallback: if elements already exist in DOM, initialize immediately
+    if (document.getElementById('btnSolarPumpOn')) window.initApp();
 });
 
 function setupTabs() {
@@ -116,6 +125,8 @@ function setupEventListeners() {
     document.getElementById('alertOkBtn').addEventListener('click', closeAlert);
     document.getElementById('confirmCancelBtn').addEventListener('click', closeConfirm);
     document.getElementById('confirmOkBtn').addEventListener('click', confirmAction);
+    document.getElementById('alertModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeAlert(); });
+    document.getElementById('confirmModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeConfirm(); });
 }
 
 // ============= POBIERANIE / SYMULACJA =============
@@ -446,13 +457,11 @@ function showAlert(icon, title, msg) {
     document.getElementById('alertModal').classList.add('show');
 }
 function closeAlert() { document.getElementById('alertModal').classList.remove('show'); }
-document.getElementById('alertModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeAlert(); });
 
 let pendingAction = null;
 function showConfirm(msg, action) { pendingAction = action; document.getElementById('confirmMessage').textContent = msg; document.getElementById('confirmModal').classList.add('show'); }
 function closeConfirm() { document.getElementById('confirmModal').classList.remove('show'); pendingAction = null; }
 function confirmAction() { document.getElementById('confirmModal').classList.remove('show'); if (pendingAction) { const a = pendingAction; pendingAction = null; a(); } }
-document.getElementById('confirmModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeConfirm(); });
 
 // ============= STEROWANIE =============
 
