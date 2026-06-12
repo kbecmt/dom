@@ -22,8 +22,8 @@
                     Temp</button>
                 <button class="tab-btn" data-tab="tab-co">🔥 CO</button>
                 <button class="tab-btn" data-tab="tab-solary">☀️ Solary</button>
-                <button class="tab-btn" data-tab="tab-bufor">📦
-                    Bufor/Woda</button>
+                <button class="tab-btn" data-tab="tab-woda-bufor">⬆️ Woda-Bufor</button>
+                <button class="tab-btn" data-tab="tab-bufor-woda">⬇️ Bufor-Woda</button>
                 <button class="tab-btn" data-tab="tab-sterowanie">🎮 Sterowanie
                     ręczne</button>
                 <button class="tab-btn" data-tab="tab-diagnostyka">📊
@@ -199,47 +199,38 @@
                 </section>
             </div>
 
-            <!-- ===== ZAKŁADKA: Bufor/Woda ===== -->
-            <div id="tab-bufor" class="tab-content">
+            <!-- ===== ZAKŁADKA: Woda -> Bufor ===== -->
+            <div id="tab-woda-bufor" class="tab-content">
                 <section class="card">
-                    <h2>📦 Sterowanie bufor ↔ woda</h2>
-                    <p class="desc">Automatyczny obieg ciepła między buforem a
-                        wodą. Woda→Bufor: gdy woda góra > min temp. wody i
-                        jest cieplejsza od bufora dół o zadaną deltę.
-                        Bufor→Woda: gdy woda góra < min temp. wody i bufor
-                        góra jest cieplejszy od wody góra o zadaną deltę.</p>
+                    <h2>⬆️ Kierunek: Woda → Bufor</h2>
+                    <p class="desc">Przekazywanie nadmiaru ciepła z zasobnika wody do bufora CO. Działa tylko gdy temp. wody góra > min. temp. wody.</p>
                     <div class="status-grid">
                         <div class="status-item">
                             <span class="status-label">Pompa obiegu</span>
-                            <span class="status-indicator"
-                                id="bufferPumpStatus">
+                            <span class="status-indicator" id="bufferPumpStatusWB">
                                 <span class="led led-off"></span>
                                 <span class="led-text">Wyłączona</span>
                             </span>
                         </div>
                         <div class="status-item">
                             <span class="status-label">Zawór kierunku</span>
-                            <span class="status-indicator" id="valveStatus">
+                            <span class="status-indicator" id="valveStatusWB">
                                 <span class="led led-off"></span>
                                 <span class="led-text">Zamknięty</span>
                             </span>
                         </div>
                         <div class="status-item">
-                            <span class="status-label">Aktualny kierunek</span>
+                            <span class="status-label">Status kierunku</span>
                             <span class="status-indicator">
-                                <span class="led led-off"
-                                    id="directionLed"></span>
-                                <span class="led-text"
-                                    id="directionText">Brak</span>
+                                <span class="led led-off" id="directionLedWB"></span>
+                                <span class="led-text">Woda → Bufor</span>
                             </span>
                         </div>
                     </div>
                 </section>
+
                 <section class="card">
-                    <h2>⬆️ Woda → Bufor</h2>
-                    <p class="desc">Włącz only gdy temp. woda góra > min
-                        temp. wody (domyślnie 50°C). Przekazuje nadmiar ciepła
-                        z wody do bufora.</p>
+                    <h2>⚙️ Ustawienia Woda → Bufor</h2>
                     <div class="settings-grid">
                         <div class="setting-item">
                             <label for="maxBufferTemp">Max temp. bufora (°C)</label>
@@ -257,12 +248,42 @@
                                 step="0.5" value="4" min="0.5" max="20">
                         </div>
                     </div>
+                    <button id="btnSaveWodaBuforSettings" class="btn btn-save">💾 Zapisz ustawienia W→B</button>
                 </section>
+            </div>
+
+            <!-- ===== ZAKŁADKA: Bufor -> Woda ===== -->
+            <div id="tab-bufor-woda" class="tab-content">
                 <section class="card">
-                    <h2>⬇️ Bufor → Woda</h2>
-                    <p class="desc">Włącz only gdy temp. woda góra < min
-                        temp. wody (domyślnie 50°C). Ogrzewa wodę ciepłem
-                        z bufora.</p>
+                    <h2>⬇️ Kierunek: Bufor → Woda</h2>
+                    <p class="desc">Ogrzewanie wody ciepłem zgromadzonym w buforze CO. Działa tylko gdy temp. wody góra < min. temp. wody.</p>
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <span class="status-label">Pompa obiegu</span>
+                            <span class="status-indicator" id="bufferPumpStatusBW">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wyłączona</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Zawór kierunku</span>
+                            <span class="status-indicator" id="valveStatusBW">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Zamknięty</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Status kierunku</span>
+                            <span class="status-indicator">
+                                <span class="led led-off" id="directionLedBW"></span>
+                                <span class="led-text">Bufor → Woda</span>
+                            </span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <h2>⚙️ Ustawienia Bufor → Woda</h2>
                     <div class="settings-grid">
                         <div class="setting-item">
                             <label for="buforWodaDeltaOn">Delta włączenia (°C)</label>
@@ -280,9 +301,8 @@
                                 value="50" min="5" max="80">
                         </div>
                     </div>
+                    <button id="btnSaveBuforWodaSettings" class="btn btn-save">💾 Zapisz ustawienia B→W</button>
                 </section>
-                <button id="btnSaveBufferSettings" class="btn btn-save">💾
-                    Zapisz ustawienia bufora</button>
             </div>
 
             <!-- ===== ZAKŁADKA: CO ===== -->

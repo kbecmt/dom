@@ -109,8 +109,11 @@ function setupEventListeners() {
     document.getElementById('btnCoPumpOff').addEventListener('click', () => {
         showConfirm('Wyłączyć pompę CO?', () => controlRelay('co_pump', false));
     });
-    document.getElementById('btnSaveBufferSettings').addEventListener('click', () => {
-        showConfirm('Zapisać ustawienia bufora/wody?', saveBufferSettings);
+    document.getElementById('btnSaveWodaBuforSettings').addEventListener('click', () => {
+        showConfirm('Zapisać ustawienia Woda → Bufor?', saveBufferSettings);
+    });
+    document.getElementById('btnSaveBuforWodaSettings').addEventListener('click', () => {
+        showConfirm('Zapisać ustawienia Bufor → Woda?', saveBufferSettings);
     });
     document.getElementById('btnSaveSolarSettings').addEventListener('click', () => {
         showConfirm('Zapisać ustawienia solarów?', saveSolarSettings);
@@ -335,16 +338,21 @@ function updateAll(data) {
 
     // Statusy - wszystkie karty
     const pumpStates = [
-        ['solarPumpStatus', 'solarPumpStatus2', 'ctrlSolarPumpStatus', 'diagSolarPump', sol.pumpActive, 'Włączona', 'Wyłączona'],
-        ['bufferPumpStatus', 'bufferPumpStatus2', 'ctrlBufferPumpStatus', 'diagBufferPump', buf.pumpActive, 'Włączona', 'Wyłączona'],
-        ['valveStatus', 'valveStatus2', 'ctrlValveStatus', 'diagValve', buf.valveOpen, 'Otwarty', 'Zamknięty']
+        [['solarPumpStatus', 'solarPumpStatus2', 'ctrlSolarPumpStatus'], 'diagSolarPump', sol.pumpActive, 'Włączona', 'Wyłączona'],
+        [['bufferPumpStatus', 'bufferPumpStatus2', 'bufferPumpStatusWB', 'bufferPumpStatusBW', 'ctrlBufferPumpStatus'], 'diagBufferPump', buf.pumpActive, 'Włączona', 'Wyłączona'],
+        [['valveStatus', 'valveStatus2', 'valveStatusWB', 'valveStatusBW', 'ctrlValveStatus'], 'diagValve', buf.valveOpen, 'Otwarty', 'Zamknięty']
     ];
-    pumpStates.forEach(([id1, id2, id3, id4, active, on, off]) => {
-        updateLed(id1, active, on, off);
-        if (id2) updateLed(id2, active, on, off);
-        if (id3) updateLed(id3, active, on, off);
-        if (id4) setText(id4, active ? on : off);
+
+    pumpStates.forEach(([ledIds, textId, active, on, off]) => {
+        ledIds.forEach(id => updateLed(id, active, on, off));
+        setText(textId, active ? on : off);
     });
+
+    // Aktualizacja kierunku w nowych zakładkach
+    const dirWB = buf.direction === 'woda->bufor';
+    const dirBW = buf.direction === 'bufor->woda';
+    updateLed('directionLedWB', dirWB, '⬆️ Woda → Bufor', 'Brak');
+    updateLed('directionLedBW', dirBW, '⬇️ Bufor → Woda', 'Brak');
 
     // Kierunek
     const dirLed = getEl('directionLed');
