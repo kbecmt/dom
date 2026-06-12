@@ -112,6 +112,11 @@ struct SolarSystem
     unsigned long mixerStepEnd = 0;
     String coPhase = "idle";        // idle, starting, running, stopping
     unsigned long coCheckTimer = 0; // timer 30s do sprawdzania temp za mieszaczem
+
+    // Nieblokujący zawór
+    bool valveMoving = false;
+    unsigned long valveEndMillis = 0;
+    int activeValveRelay = -1;
 };
 
 // Forward declarations
@@ -120,6 +125,7 @@ void setupWebServer();
 void readTemps();
 void updateControl();
 void checkMixerTimer();
+void checkValveTimer();
 
 SolarSystem solar;
 WebServer server(80);
@@ -214,6 +220,24 @@ void loop()
         updateControl();
     }
     checkMixerTimer();
+    checkValveTimer();
+}
+
+void startValveAction(int relay) {
+    digitalWrite(RELAY_VALVE_OPEN, LOW);
+    digitalWrite(RELAY_VALVE_CLOSE, LOW);
+    digitalWrite(relay, HIGH);
+    solar.valveMoving = true;
+    solar.valveEndMillis = millis() + IMPULSE_MS;
+    solar.activeValveRelay = relay;
+}
+
+void checkValveTimer() {
+    if (solar.valveMoving && millis() >= solar.valveEndMillis) {
+        if (solar.activeValveRelay != -1) digitalWrite(solar.activeValveRelay, LOW);
+        solar.valveMoving = false;
+        solar.activeValveRelay = -1;
+    }
 }
 
 void checkMixerTimer()
@@ -383,13 +407,13 @@ void updateControl()
                 Serial.printf("=> CO: mixerTemp %.1f >= %.1f → zamknij\n", solar.mixerTemp, solar.coMaxMixerTemp);
             }
         }
-        // Warunek wyłączenia: temp powrotu >= temp zadana LUB bufor góra < temp zadana
-        if (solar.returnTemp >= solar.coTargetTemp || solar.bufferTopTemp < solar.coTargetTemp)
+        // Warunek wyłączenia: (temp powrotu - temp zadana) > delta wyłączenia LUB bufor góra < temp zadana
+        if ((solar.returnTemp - solar.coTargetTemp) > solar.coDeltaOff || solar.bufferTopTemp < solar.coTargetTemp)
         {
             solar.coPumpActive = false;
             digitalWrite(RELAY_CO_PUMP, LOW);
             solar.coPhase = "stopping";
-            Serial.printf("=> CO: STOPPING (powrót=%.1f >= zadana=%.1f)\n", solar.returnTemp, solar.coTargetTemp);
+            Serial.printf("=> CO: STOPPING (powrót-zadana=%.1f > deltaOff=%.1f)\n", solar.returnTemp - solar.coTargetTemp, solar.coDeltaOff);
             if (!solar.mixerRunning && solar.mixerPercent > 0)
             {
                 mixerStep(false); // zacznij zamykać
@@ -435,9 +459,7 @@ void updateControl()
     {
         if (!solar.bufferPumpActive || !solar.valveOpen || solar.direction != newDir)
         {
-            digitalWrite(RELAY_VALVE_OPEN, HIGH);
-            delay(IMPULSE_MS);
-            digitalWrite(RELAY_VALVE_OPEN, LOW);
+            startValveAction(RELAY_VALVE_OPEN);
             digitalWrite(RELAY_BUFFER_PUMP, HIGH);
             solar.bufferPumpActive = true;
             solar.valveOpen = true;
@@ -458,9 +480,7 @@ void updateControl()
         if (shouldStop && (solar.bufferPumpActive || solar.valveOpen))
         {
             digitalWrite(RELAY_BUFFER_PUMP, LOW);
-            digitalWrite(RELAY_VALVE_CLOSE, HIGH);
-            delay(IMPULSE_MS);
-            digitalWrite(RELAY_VALVE_CLOSE, LOW);
+            startValveAction(RELAY_VALVE_CLOSE);
             solar.bufferPumpActive = false;
             solar.valveOpen = false;
             solar.direction = "brak";
@@ -470,6 +490,13 @@ void updateControl()
 }
 
 // ============= SERWER =============
+
+void sendJsonResponse(JsonDocument& doc) {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    String out; 
+    serializeJson(doc, out);
+    server.send(200, "application/json", out);
+}
 
 // Funkcja do obsługi ścieżki głównej, teraz serwująca prostą wiadomość
 void handleRoot() {
@@ -517,9 +544,7 @@ void setupWebServer()
         doc["co"]["returnTemp"] = solar.returnTemp;
         doc["outdoorTemp"] = solar.outdoorTemp;
 
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        String out; serializeJson(doc, out);
-        server.send(200, "application/json", out); });
+        sendJsonResponse(doc); });
 
     server.on("/api/solar/settings", HTTP_POST, []()
               {
@@ -530,8 +555,9 @@ void setupWebServer()
         if (doc.containsKey("deltaOn")) solar.solarDeltaOn = doc["deltaOn"];
         if (doc.containsKey("deltaOff")) solar.solarDeltaOff = doc["deltaOff"];
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        JsonDocument res; res["status"] = "ok";
+        sendJsonResponse(res);
+    });
 
     server.on("/api/buffer/settings", HTTP_POST, []()
               {
@@ -545,8 +571,9 @@ void setupWebServer()
         if (doc.containsKey("buforWodaDeltaOff")) solar.buforWodaDeltaOff = doc["buforWodaDeltaOff"];
         if (doc.containsKey("minWodaTemp")) solar.minWodaTemp = doc["minWodaTemp"];
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        JsonDocument res; res["status"] = "ok";
+        sendJsonResponse(res);
+    });
 
     server.on("/api/co/settings", HTTP_POST, []()
               {
@@ -558,8 +585,9 @@ void setupWebServer()
         if (doc.containsKey("deltaOn")) solar.coDeltaOn = doc["deltaOn"];
         if (doc.containsKey("deltaOff")) solar.coDeltaOff = doc["deltaOff"];
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        JsonDocument res; res["status"] = "ok";
+        sendJsonResponse(res);
+    });
 
     server.on("/api/relay/control", HTTP_POST, []()
               {
@@ -577,8 +605,8 @@ void setupWebServer()
         }
         if (doc.containsKey("valve")) {
             bool ns = doc["valve"];
-            if (ns && !solar.valveOpen) { digitalWrite(RELAY_VALVE_OPEN, HIGH); delay(IMPULSE_MS); digitalWrite(RELAY_VALVE_OPEN, LOW); }
-            else if (!ns && solar.valveOpen) { digitalWrite(RELAY_VALVE_CLOSE, HIGH); delay(IMPULSE_MS); digitalWrite(RELAY_VALVE_CLOSE, LOW); }
+            if (ns && !solar.valveOpen) { startValveAction(RELAY_VALVE_OPEN); }
+            else if (!ns && solar.valveOpen) { startValveAction(RELAY_VALVE_CLOSE); }
             solar.valveOpen = ns;
             if (!solar.valveOpen) solar.direction = "brak";
         }
@@ -586,8 +614,8 @@ void setupWebServer()
             solar.coPumpActive = doc["co_pump"];
             digitalWrite(RELAY_CO_PUMP, solar.coPumpActive ? HIGH : LOW);
         }
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        JsonDocument res; res["status"] = "ok";
+        sendJsonResponse(res); });
 
     server.begin();
     Serial.println("Server started");

@@ -11,6 +11,13 @@ const state = {
     initialized: false
 };
 
+// Cache dla elementów DOM, aby nie szukać ich przy każdej aktualizacji
+const elCache = {};
+function getEl(id) {
+    if (!elCache[id]) elCache[id] = document.getElementById(id);
+    return elCache[id];
+}
+
 const sim = {
     collector: 72, bufferTop: 35, bufferBottom: 28, waterTop: 60, waterBottom: 50,
     solarPump: false, bufferPump: false, valveOpen: false, direction: 'brak',
@@ -36,14 +43,6 @@ window.initApp = () => {
     startPolling();
 };
 
-setTimeout(() => {
-  document.addEventListener('DOMContentLoaded', () => {
-        // Fallback: if elements already exist in DOM, initialize immediately
-        if (document.getElementById('btnSolarPumpOn')) window.initApp();
-        alert("OK")
-    });
-}, 2000);
-
 function setupTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -62,7 +61,7 @@ function checkConnection() {
 function enableSimulation() {
     state.simMode = true;
     state.connected = true;
-    document.querySelector('.status-dot').className = 'status-dot online';
+    if (getEl('connectionStatus')) getEl('connectionStatus').querySelector('.status-dot').className = 'status-dot online';
     document.getElementById('statusText').textContent = 'Symulacja';
     const btn = document.getElementById('btnSimToggle');
     if (btn) btn.classList.add('active');
@@ -72,7 +71,7 @@ function enableSimulation() {
 function disableSimulation() {
     state.simMode = false;
     state.connected = false;
-    document.querySelector('.status-dot').className = 'status-dot offline';
+    if (getEl('connectionStatus')) getEl('connectionStatus').querySelector('.status-dot').className = 'status-dot offline';
     document.getElementById('statusText').textContent = 'Offline';
     const btn = document.getElementById('btnSimToggle');
     if (btn) btn.classList.remove('active');
@@ -326,10 +325,7 @@ function updateAll(data) {
         diagTemps['diagOutdoorTemp'] = outT;
         diagTemps['ctrlOutdoorTemp'] = outT;
     }
-    Object.keys(diagTemps).forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = fmt(diagTemps[id]);
-    });
+    Object.keys(diagTemps).forEach(id => setText(id, fmt(diagTemps[id])));
 
     // Delta solarna w zakładce Solary
     const solDelta = (sol.collector && sol.waterBottom)
@@ -351,8 +347,8 @@ function updateAll(data) {
     });
 
     // Kierunek
-    const dirLed = document.getElementById('directionLed');
-    const dirText = document.getElementById('directionText');
+    const dirLed = getEl('directionLed');
+    const dirText = getEl('directionText');
     if (buf.direction === 'woda->bufor') {
         if (dirLed) dirLed.className = 'led led-on';
         if (dirText) dirText.textContent = '⬆️ Woda → Bufor';
@@ -387,12 +383,12 @@ function updateAll(data) {
         setText('diagMixerPercent', (data.co.mixerPercent || 0) + '%');
         // Pasek mieszacza
         const pct = data.co.mixerPercent || 0;
-        const bar = document.getElementById('coMixerBar');
-        const txt = document.getElementById('coMixerPercentText');
+        const bar = getEl('coMixerBar');
+        const txt = getEl('coMixerPercentText');
         if (bar) bar.style.width = pct + '%';
         if (txt) txt.textContent = pct + '%';
         // Ustawienia CO (pierwsze ładowanie)
-        const el = document.getElementById('coMaxMixerTemp');
+        const el = getEl('coMaxMixerTemp');
         if (el && el.dataset.loaded !== 'true') {
             setVal('coMaxMixerTemp', data.co.maxMixerTemp);
             setVal('coTargetTemp', data.co.targetTemp);
@@ -403,7 +399,8 @@ function updateAll(data) {
     }
 
     // Ustawienia (pierwsze ładowanie)
-    if (document.getElementById('maxWaterTemp').dataset.loaded !== 'true') {
+    const maxWTEl = getEl('maxWaterTemp');
+    if (maxWTEl && maxWTEl.dataset.loaded !== 'true') {
         setVal('maxWaterTemp', sol.maxWaterTemp);
         setVal('solarDeltaOn', sol.deltaOn);
         setVal('solarDeltaOff', sol.deltaOff);
@@ -413,7 +410,7 @@ function updateAll(data) {
         setVal('buforWodaDeltaOn', buf.buforWodaDeltaOn);
         setVal('buforWodaDeltaOff', buf.buforWodaDeltaOff);
         setVal('minWodaTemp', buf.minWodaTemp);
-        document.getElementById('maxWaterTemp').dataset.loaded = 'true';
+        maxWTEl.dataset.loaded = 'true';
     }
 
     // Diagnostyka - delty
@@ -430,12 +427,12 @@ function updateAll(data) {
     setText('currentDirection', dirNames[buf.direction] || '— Brak —');
 }
 
-function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
-function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
+function setText(id, v) { const el = getEl(id); if (el) el.textContent = v; }
+function setVal(id, v) { const el = getEl(id); if (el) el.value = v; }
 function fmt(t) { if (t === null || t === undefined || isNaN(t)) return '--.-'; return t.toFixed(1); }
 
 function updateLed(eid, active, onText, offText) {
-    const c = document.getElementById(eid);
+    const c = getEl(eid);
     if (!c) return;
     const led = c.querySelector('.led');
     const txt = c.querySelector('.led-text');
@@ -444,8 +441,8 @@ function updateLed(eid, active, onText, offText) {
 }
 
 function updateConnectionStatus(connected) {
-    const dot = document.querySelector('.status-dot');
-    const text = document.getElementById('statusText');
+    const dot = getEl('connectionStatus') ? getEl('connectionStatus').querySelector('.status-dot') : null;
+    const text = getEl('statusText');
     if (state.simMode) { if (dot) dot.className = 'status-dot online'; if (text) text.textContent = 'Symulacja'; return; }
     state.connected = connected;
     if (connected) { if (dot) dot.className = 'status-dot online'; if (text) text.textContent = 'Online'; }
