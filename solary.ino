@@ -16,7 +16,6 @@ const char index_html[] PROGMEM = R"rawliteral(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Podole</title>
 <link rel="stylesheet" href="https://kbecmt.github.io/dom/style.css">
-<script src="https://kbecmt.github.io/dom/app.js"></script>
 </head>
 <body>
 
@@ -26,8 +25,10 @@ const char index_html[] PROGMEM = R"rawliteral(
   .then(response => response.text())
   .then(html => {
     tresc.innerHTML = html;
+    if (typeof initApp === 'function') initApp();
   });
 </script>
+<script src="https://kbecmt.github.io/dom/app.js"></script>
 </body>
 </html>
 )rawliteral";
@@ -516,6 +517,7 @@ void setupWebServer()
         doc["co"]["returnTemp"] = solar.returnTemp;
         doc["outdoorTemp"] = solar.outdoorTemp;
 
+        server.sendHeader("Access-Control-Allow-Origin", "*");
         String out; serializeJson(doc, out);
         server.send(200, "application/json", out); });
 
@@ -528,6 +530,7 @@ void setupWebServer()
         if (doc.containsKey("deltaOn")) solar.solarDeltaOn = doc["deltaOn"];
         if (doc.containsKey("deltaOff")) solar.solarDeltaOff = doc["deltaOff"];
         saveSettings();
+        server.sendHeader("Access-Control-Allow-Origin", "*");
         server.send(200, "application/json", "{\"status\":\"ok\"}"); });
 
     server.on("/api/buffer/settings", HTTP_POST, []()
@@ -542,6 +545,7 @@ void setupWebServer()
         if (doc.containsKey("buforWodaDeltaOff")) solar.buforWodaDeltaOff = doc["buforWodaDeltaOff"];
         if (doc.containsKey("minWodaTemp")) solar.minWodaTemp = doc["minWodaTemp"];
         saveSettings();
+        server.sendHeader("Access-Control-Allow-Origin", "*");
         server.send(200, "application/json", "{\"status\":\"ok\"}"); });
 
     server.on("/api/co/settings", HTTP_POST, []()
@@ -554,6 +558,7 @@ void setupWebServer()
         if (doc.containsKey("deltaOn")) solar.coDeltaOn = doc["deltaOn"];
         if (doc.containsKey("deltaOff")) solar.coDeltaOff = doc["deltaOff"];
         saveSettings();
+        server.sendHeader("Access-Control-Allow-Origin", "*");
         server.send(200, "application/json", "{\"status\":\"ok\"}"); });
 
     server.on("/api/relay/control", HTTP_POST, []()
@@ -581,9 +586,9 @@ void setupWebServer()
             solar.coPumpActive = doc["co_pump"];
             digitalWrite(RELAY_CO_PUMP, solar.coPumpActive ? HIGH : LOW);
         }
+        server.sendHeader("Access-Control-Allow-Origin", "*");
         server.send(200, "application/json", "{\"status\":\"ok\"}"); });
 
-    server.sendHeader("Access-Control-Allow-Origin", "*");
     server.begin();
     Serial.println("Server started");
 }

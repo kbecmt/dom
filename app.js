@@ -2,7 +2,7 @@
 // Sterownik Solarny - Aplikacja Webowa
 // =========================================
 
-const API_BASE = "http://192.168.0.170";
+const API_BASE = window.location.hostname ? `http://${window.location.hostname}` : "http://192.168.0.139";
 
 const state = {
     connected: false,
@@ -29,17 +29,19 @@ const sim = {
 window.initApp = () => {
     if (state.initialized) return;
     state.initialized = true;
-  console.log("inicjalizacja aplikacji");
+
     setupTabs();
     setupEventListeners();
     checkConnection();
-
+    startPolling();
 };
 
 setTimeout(() => {
-  if (document.getElementById('btnSolarPumpOn')) {
-    window.initApp();
-  }
+  document.addEventListener('DOMContentLoaded', () => {
+        // Fallback: if elements already exist in DOM, initialize immediately
+        if (document.getElementById('btnSolarPumpOn')) window.initApp();
+        alert("OK")
+    });
 }, 2000);
 
 function setupTabs() {
