@@ -60,10 +60,15 @@ header h1 {
 /* ============= ZAKŁADKI ============= */
 .tabs {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     margin-bottom: 20px;
-    flex-wrap: wrap;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
 }
+
+.tabs::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
 .tab-btn {
     padding: 10px 18px;
@@ -75,6 +80,8 @@ header h1 {
     font-size: 14px;
     font-weight: 600;
     transition: all 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .tab-btn:hover {
@@ -502,15 +509,47 @@ header h1 {
 
 /* Responsive */
 @media (max-width: 600px) {
-    .container { padding: 12px; }
-    header h1 { font-size: 18px; }
-    .tabs { gap: 4px; }
-    .tab-btn { padding: 8px 12px; font-size: 12px; }
-    .sensor-grid { grid-template-columns: repeat(2, 1fr); }
-    .sensor-value { font-size: 22px; }
-    .control-item { flex-direction: column; align-items: stretch; text-align: center; }
-    .control-label { min-width: auto; }
-     .btn { width: 100%; }
+    .container { padding: 10px; }
+    
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 15px;
+    }
+
+    header h1 { font-size: 20px; }
+
+    .connection-status {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .tabs {
+        margin: 0 -10px 15px -10px;
+        padding: 0 10px 10px 10px;
+    }
+
+    .tab-btn { padding: 8px 14px; font-size: 13px; }
+
+    .card { padding: 16px; margin-bottom: 12px; }
+    .card h2 { font-size: 16px; }
+
+    .sensor-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .sensor-item { padding: 10px; }
+    .sensor-value { font-size: 20px; }
+
+    .status-item { padding: 8px 10px; }
+    .status-label { font-size: 13px; }
+
+    .control-item { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
+    .control-label { min-width: auto; text-align: center; font-weight: 600; }
+    .control-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    
+    .btn { padding: 12px; font-size: 14px; width: 100%; }
+    .btn-save { margin-top: 5px; }
+
+    .modal-content { width: 95%; max-width: none; }
  }
 
  .btn-sim {
