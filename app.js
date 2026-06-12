@@ -29,16 +29,19 @@ const sim = {
 window.initApp = () => {
     if (state.initialized) return;
     state.initialized = true;
-    
+
     setupTabs();
     setupEventListeners();
     checkConnection();
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Fallback: if elements already exist in DOM, initialize immediately
-    if (document.getElementById('btnSolarPumpOn')) window.initApp();
-});
+setTimeout(() => {
+  document.addEventListener('DOMContentLoaded', () => {
+        // Fallback: if elements already exist in DOM, initialize immediately
+        if (document.getElementById('btnSolarPumpOn')) window.initApp();
+        alert("OK")
+    });
+}, 2000);
 
 function setupTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -186,7 +189,7 @@ function simulateData() {
             sim.bufferPump = true; sim.valveOpen = true; sim.direction = 'bufor->woda';
         }
     } else if ((sim.direction === 'woda->bufor' && dWB < sim.wodaBuforDeltaOff) ||
-               (sim.direction === 'bufor->woda' && dBW < sim.buforWodaDeltaOff) || (!wb && !bw)) {
+        (sim.direction === 'bufor->woda' && dBW < sim.buforWodaDeltaOff) || (!wb && !bw)) {
         if (sim.bufferPump || sim.valveOpen) { sim.bufferPump = false; sim.valveOpen = false; sim.direction = 'brak'; }
     }
 
