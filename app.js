@@ -2,7 +2,7 @@
 // Sterownik Solarny - Aplikacja Webowa
 // =========================================
 
-const API_BASE = window.location.origin;
+const API_BASE = "http://192.168.0.170";
 
 const state = {
     connected: false,
