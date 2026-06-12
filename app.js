@@ -29,18 +29,17 @@ const sim = {
 window.initApp = () => {
     if (state.initialized) return;
     state.initialized = true;
-
+  console.log("inicjalizacja aplikacji");
     setupTabs();
     setupEventListeners();
     checkConnection();
+
 };
 
 setTimeout(() => {
-  document.addEventListener('DOMContentLoaded', () => {
-        // Fallback: if elements already exist in DOM, initialize immediately
-        if (document.getElementById('btnSolarPumpOn')) window.initApp();
-        alert("OK")
-    });
+  if (document.getElementById('btnSolarPumpOn')) {
+    window.initApp();
+  }
 }, 2000);
 
 function setupTabs() {
