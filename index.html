@@ -1,110 +1,684 @@
-
-
-        <div class="topbar" id="title">Ogrzewanie</div>
-
-        <div class="content" id="content">
-            <div id="data">Data</div>
-            <div id="Ogrzewanie">
-                <div class="form">
-                    <div class="row">
-                        <label>Dom:</label>
-                        <input id="tD" type="text">
-                    </div>
-                    <div class="row">
-                        <label>Bufor góra:</label>
-                        <input id="BtG" type="text">
-                    </div>
-                    <div class="row">
-                        <label>Bufor dół:</label>
-                        <input id="BtD" type="text">
-                    </div>
-
-                    <h3>Ustawienia</h3>
-
-                    <div class="row">
-                        <label>Dom max:</label>
-                        <input id="tDmax" type="number">
-                    </div>
-
-                    <div class="row">
-                        <label>Mieszacz max:</label>
-                        <input id="tMmax" type="number">
-                    </div>
-
-                    <div class="row">
-                        <label>Tryb:</label>
-                        <select id="Op">
-                            <option value="0">OFF</option>
-                            <option value="1">ON</option>
-                        </select>
-                    </div>
+<!DOCTYPE html>
+<html lang="pl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Sterownik Solarny</title>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <h1>🌞 Sterownik Solarny</h1>
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot offline"></span>
+                    <span id="statusText">Offline</span>
+                    <button id="btnSimToggle" class="btn btn-sim" title="Włącz/wyłącz symulację">🎭 Sym</button>
                 </div>
-                <br>
-                <button onclick="save_co()">Zapisz</button>
+            </header>
+
+            <!-- Zakładki -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="tab-temperatury">🌡️
+                    Temp</button>
+                <button class="tab-btn" data-tab="tab-co">🔥 CO</button>
+                <button class="tab-btn" data-tab="tab-solary">☀️ Solary</button>
+                <button class="tab-btn" data-tab="tab-bufor">📦
+                    Bufor/Woda</button>
+                <button class="tab-btn" data-tab="tab-sterowanie">🎮 Sterowanie
+                    ręczne</button>
+                <button class="tab-btn" data-tab="tab-diagnostyka">📊
+                    Diagnostyka</button>
             </div>
-            <div id="Solary">
-                <div class="form">
-                    <div class="row">
-                        <label>Kolektor:</label>
-                        <input id="StK" type="text">
-                    </div>
-                    <div class="row">
-                        <label>Woda góra:</label>
-                        <input id="StWG" type="text">
-                    </div>
-                    <div class="row">
-                        <label>Woda dół:</label>
-                        <input id="StWD" type="text">
-                    </div>
 
-                    <h3>Ustawienia</h3>
-
-                    <div class="row">
-                        <label>ΔON:</label>
-                        <input id="don" type="number">
+            <!-- ===== ZAKŁADKA: Temperatury ===== -->
+            <div id="tab-temperatury" class="tab-content active">
+                <section class="card">
+                    <h2>🌡️ Temperatury</h2>
+                    <div class="sensor-grid">
+                        <div class="sensor-item">
+                            <div class="sensor-label">W domu</div>
+                            <div class="sensor-value"
+                                id="overviewHouseTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Za mieszaczem</div>
+                            <div class="sensor-value"
+                                id="overviewMixerTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Powrót</div>
+                            <div class="sensor-value"
+                                id="overviewReturnTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Kolektor</div>
+                            <div class="sensor-value"
+                                id="collectorTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Bufor Góra</div>
+                            <div class="sensor-value"
+                                id="bufferTopTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Bufor Dół</div>
+                            <div class="sensor-value"
+                                id="bufferBottomTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Góra</div>
+                            <div class="sensor-value"
+                                id="waterTopTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Dół</div>
+                            <div class="sensor-value"
+                                id="waterBottomTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">🌡️ Zewnętrzna</div>
+                            <div class="sensor-value"
+                                id="overviewOutdoorTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
                     </div>
-
-                    <div class="row">
-                        <label>ΔOFF:</label>
-                        <input id="doff" type="number">
+                </section>
+                <!-- Statusy przy temperaturach -->
+                <section class="card">
+                    <h2>⚙️ Status pomp</h2>
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <span class="status-label">🔥 Pompa CO</span>
+                            <span class="status-indicator" id="overviewCoPumpStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wyłączona</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">☀️ Pompa solarna</span>
+                            <span class="status-indicator"
+                                id="solarPumpStatus2">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wyłączona</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">📦 Pompa obiegu</span>
+                            <span class="status-indicator"
+                                id="bufferPumpStatus2">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wyłączona</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">🚿 Zawór kierunku</span>
+                            <span class="status-indicator" id="valveStatus2">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Zamknięty</span>
+                            </span>
+                        </div>
                     </div>
-                    <div class="row">
-                        <label>MAX CWU:</label>
-                        <input id="max" type="number">
-                    </div>
-
-                    <div class="row">
-                        <label>Tryb:</label>
-                        <select id="mode">
-                            <option value="0">AUTO</option>
-                            <option value="1">ON</option>
-                            <option value="2">OFF</option>
-                        </select>
-                    </div>
-                </div>
-                <br>
-                <button onclick="save()">Zapisz</button>
-                <button onclick="sendToGoogleForm()">Wyślij</button>
+                </section>
             </div>
-            <div id="Wykres">
-                <canvas id="chart"></canvas>
+
+            <!-- ===== ZAKŁADKA: Solary ===== -->
+            <div id="tab-solary" class="tab-content">
+                <section class="card">
+                    <h2>☀️ Sterowanie solarne</h2>
+                    <p class="desc">Pompa solarna włącza się, gdy delta kolektor −
+                        woda dół przekroczy deltę włączenia i temp. wody góra jest
+                        poniżej maksymalnej. Wyłącza się, gdy delta spadnie
+                        poniżej delta wyłączenia.</p>
+                    <div class="sensor-grid">
+                        <div class="sensor-item">
+                            <div class="sensor-label">Kolektor</div>
+                            <div class="sensor-value"
+                                id="solCollectorTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Dół</div>
+                            <div class="sensor-value"
+                                id="solWaterBottomTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Góra</div>
+                            <div class="sensor-value"
+                                id="solWaterTopTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                    </div>
+                    <div class="status-grid" style="margin-top:12px">
+                        <div class="status-item">
+                            <span class="status-label">📐 Delta (kolektor − woda
+                                dół)</span>
+                            <span class="status-indicator">
+                                <span class="diag-value" id="solDelta">--.-
+                                    °C</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">☀️ Pompa solarna</span>
+                            <span class="status-indicator" id="solarPumpStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wyłączona</span>
+                            </span>
+                        </div>
+                    </div>
+                </section>
+                <section class="card">
+                    <h2>⚙️ Ustawienia</h2>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="maxWaterTemp">Max temp. wody (°C)</label>
+                            <input type="number" id="maxWaterTemp" step="0.5"
+                                value="85" min="20" max="99">
+                        </div>
+                        <div class="setting-item">
+                            <label for="solarDeltaOn">Delta włączenia (°C)</label>
+                            <input type="number" id="solarDeltaOn" step="0.5"
+                                value="8" min="1" max="30">
+                        </div>
+                        <div class="setting-item">
+                            <label for="solarDeltaOff">Delta wyłączenia (°C)</label>
+                            <input type="number" id="solarDeltaOff" step="0.5"
+                                value="4" min="0.5" max="20">
+                        </div>
+                    </div>
+                    <button id="btnSaveSolarSettings" class="btn btn-save">☀️
+                        Zapisz ustawienia solarów</button>
+                </section>
+            </div>
+
+            <!-- ===== ZAKŁADKA: Bufor/Woda ===== -->
+            <div id="tab-bufor" class="tab-content">
+                <section class="card">
+                    <h2>📦 Sterowanie bufor ↔ woda</h2>
+                    <p class="desc">Automatyczny obieg ciepła między buforem a
+                        wodą. Woda→Bufor: gdy woda góra > min temp. wody i
+                        jest cieplejsza od bufora dół o zadaną deltę.
+                        Bufor→Woda: gdy woda góra < min temp. wody i bufor
+                        góra jest cieplejszy od wody góra o zadaną deltę.</p>
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <span class="status-label">Pompa obiegu</span>
+                            <span class="status-indicator"
+                                id="bufferPumpStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wyłączona</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Zawór kierunku</span>
+                            <span class="status-indicator" id="valveStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Zamknięty</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Aktualny kierunek</span>
+                            <span class="status-indicator">
+                                <span class="led led-off"
+                                    id="directionLed"></span>
+                                <span class="led-text"
+                                    id="directionText">Brak</span>
+                            </span>
+                        </div>
+                    </div>
+                </section>
+                <section class="card">
+                    <h2>⬆️ Woda → Bufor</h2>
+                    <p class="desc">Włącz only gdy temp. woda góra > min
+                        temp. wody (domyślnie 50°C). Przekazuje nadmiar ciepła
+                        z wody do bufora.</p>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="maxBufferTemp">Max temp. bufora (°C)</label>
+                            <input type="number" id="maxBufferTemp" step="0.5"
+                                value="85" min="20" max="99">
+                        </div>
+                        <div class="setting-item">
+                            <label for="wodaBuforDeltaOn">Delta włączenia (°C)</label>
+                            <input type="number" id="wodaBuforDeltaOn"
+                                step="0.5" value="8" min="1" max="30">
+                        </div>
+                        <div class="setting-item">
+                            <label for="wodaBuforDeltaOff">Delta wyłączenia (°C)</label>
+                            <input type="number" id="wodaBuforDeltaOff"
+                                step="0.5" value="4" min="0.5" max="20">
+                        </div>
+                    </div>
+                </section>
+                <section class="card">
+                    <h2>⬇️ Bufor → Woda</h2>
+                    <p class="desc">Włącz only gdy temp. woda góra < min
+                        temp. wody (domyślnie 50°C). Ogrzewa wodę ciepłem
+                        z bufora.</p>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="buforWodaDeltaOn">Delta włączenia (°C)</label>
+                            <input type="number" id="buforWodaDeltaOn"
+                                step="0.5" value="10" min="1" max="30">
+                        </div>
+                        <div class="setting-item">
+                            <label for="buforWodaDeltaOff">Delta wyłączenia (°C)</label>
+                            <input type="number" id="buforWodaDeltaOff"
+                                step="0.5" value="3" min="0.5" max="20">
+                        </div>
+                        <div class="setting-item">
+                            <label for="minWodaTemp">Min temp. wody góra (°C)</label>
+                            <input type="number" id="minWodaTemp" step="0.5"
+                                value="50" min="5" max="80">
+                        </div>
+                    </div>
+                </section>
+                <button id="btnSaveBufferSettings" class="btn btn-save">💾
+                    Zapisz ustawienia bufora</button>
+            </div>
+
+            <!-- ===== ZAKŁADKA: CO ===== -->
+            <div id="tab-co" class="tab-content">
+                <section class="card">
+                    <h2>🔥 Sterowanie CO</h2>
+                    <p class="desc">Gdy temp. zadana − temp. domu > delta
+                        włączenia i bufor góra > temp. zadana: otwórz mieszacz
+                        na 5s, potem włącz pompę CO. Co 30s sprawdzaj temp. za
+                        mieszaczem — jeśli < temp. max mieszacza, otwórz na 5s;
+                        jeśli >, zamknij na 5s. Gdy temp. powrotu osiągnie
+                        temp. zadaną LUB bufor góra spadnie poniżej temp. zadanej:
+                        wyłącz pompę CO i zamknij mieszacz do 0%.</p>
+                    <div class="sensor-grid">
+                        <div class="sensor-item">
+                            <div class="sensor-label">W domu</div>
+                            <div class="sensor-value"
+                                id="coHouseTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Za mieszaczem</div>
+                            <div class="sensor-value"
+                                id="coMixerTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Powrót</div>
+                            <div class="sensor-value"
+                                id="coReturnTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Bufor Góra</div>
+                            <div class="sensor-value"
+                                id="coBufferTopTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                    </div>
+                    <div class="status-grid" style="margin-top:12px">
+                        <div class="status-item">
+                            <span class="status-label">🔥 Pompa CO</span>
+                            <span class="status-indicator" id="coPumpStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wyłączona</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">📋 Faza pracy</span>
+                            <span class="status-indicator">
+                                <span class="led-text"
+                                    id="coPhase">⏸️ Oczekiwanie</span>
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">🔧 Mieszacz</span>
+                            <span class="status-indicator">
+                                <span class="co-bar-bg">
+                                    <span class="co-bar-fill"
+                                        id="coMixerBar"></span>
+                                </span>
+                                <span class="led-text"
+                                    id="coMixerPercentText">0%</span>
+                            </span>
+                        </div>
+                    </div>
+                </section>
+                <section class="card">
+                    <h2>⚙️ Ustawienia</h2>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="coTargetTemp">Temp. zadana w domu (°C)</label>
+                            <input type="number" id="coTargetTemp" step="0.5"
+                                value="20" min="5" max="35">
+                        </div>
+                        <div class="setting-item">
+                            <label for="coMaxMixerTemp">Max temp. za mieszaczem (°C)</label>
+                            <input type="number" id="coMaxMixerTemp" step="0.5"
+                                value="40" min="20" max="80">
+                        </div>
+                        <div class="setting-item">
+                            <label for="coDeltaOn">Delta włączenia (°C)</label>
+                            <input type="number" id="coDeltaOn" step="0.5"
+                                value="2" min="0.5" max="20">
+                        </div>
+                        <div class="setting-item">
+                            <label for="coDeltaOff">Delta wyłączenia (°C)</label>
+                            <input type="number" id="coDeltaOff" step="0.5"
+                                value="1" min="0.5" max="20">
+                        </div>
+                    </div>
+                    <button id="btnSaveCoSettings" class="btn btn-save">🔥
+                        Zapisz ustawienia CO</button>
+                </section>
+            </div>
+
+            <!-- ===== ZAKŁADKA: Sterowanie ===== -->
+            <div id="tab-sterowanie" class="tab-content">
+                <p class="desc">Ręczne włączanie i wyłączanie urządzeń. Uwaga:
+                    sterowanie ręczne może kolidować z automatyką — po
+                    przełączeniu na tryb ręczny automatyka może nadal reagować
+                    przy następnym cyklu sprawdzania.</p>
+                <section class="card">
+                    <h2>🎮 Sterowanie ręczne</h2>
+                    <div class="control-grid">
+                          <div class="control-item">
+                            <span class="control-label">🔥 Pompa CO</span>
+                            <span class="status-indicator"
+                                id="ctrlCoPumpStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wył</span>
+                            </span>
+                            <div class="control-buttons">
+                                <button id="btnCoPumpOn"
+                                    class="btn btn-on">Włącz</button>
+                                <button id="btnCoPumpOff"
+                                    class="btn btn-off">Wyłącz</button>
+                            </div>
+                        </div>
+                        <div class="control-item">
+                            <span class="control-label">☀️ Pompa solarna</span>
+                            <span class="status-indicator"
+                                id="ctrlSolarPumpStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wył</span>
+                            </span>
+                            <div class="control-buttons">
+                                <button id="btnSolarPumpOn"
+                                    class="btn btn-on">Włącz</button>
+                                <button id="btnSolarPumpOff"
+                                    class="btn btn-off">Wyłącz</button>
+                            </div>
+                        </div>
+                        <div class="control-item">
+                            <span class="control-label">📦 Pompa obiegu</span>
+                            <span class="status-indicator"
+                                id="ctrlBufferPumpStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Wył</span>
+                            </span>
+                            <div class="control-buttons">
+                                <button id="btnBufferPumpOn"
+                                    class="btn btn-on">Włącz</button>
+                                <button id="btnBufferPumpOff"
+                                    class="btn btn-off">Wyłącz</button>
+                            </div>
+                        </div>
+                        <div class="control-item">
+                            <span class="control-label">🚿 Zawór kierunku</span>
+                            <span class="status-indicator" id="ctrlValveStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Zam</span>
+                            </span>
+                            <div class="control-buttons">
+                                <button id="btnValveOpen"
+                                    class="btn btn-on">Otwarty</button>
+                                <button id="btnValveClose"
+                                    class="btn btn-off">Zamknięty</button>
+                            </div>
+                        </div>
+                      
+                    </div>
+                </section>
+                <!-- Temperatury w sterowaniu -->
+                <section class="card">
+                    <h2>🌡️ Aktualne temperatury</h2>
+                    <div class="sensor-grid">
+                        <div class="sensor-item">
+                            <div class="sensor-label">W domu</div>
+                            <div class="sensor-value"
+                                id="ctrlHouseTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Za mieszaczem</div>
+                            <div class="sensor-value"
+                                id="ctrlMixerTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+
+                        <div class="sensor-item">
+                            <div class="sensor-label">Powrót</div>
+                            <div class="sensor-value"
+                                id="ctrlReturnTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Kolektor</div>
+                            <div class="sensor-value"
+                                id="ctrlCollectorTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Bufor Góra</div>
+                            <div class="sensor-value"
+                                id="ctrlBufferTopTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Bufor Dół</div>
+                            <div class="sensor-value"
+                                id="ctrlBufferBottomTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Góra</div>
+                            <div class="sensor-value"
+                                id="ctrlWaterTopTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Dół</div>
+                            <div class="sensor-value"
+                                id="ctrlWaterBottomTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">🌡️ Zewnętrzna</div>
+                            <div class="sensor-value"
+                                id="ctrlOutdoorTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ===== ZAKŁADKA: Diagnostyka ===== -->
+            <div id="tab-diagnostyka" class="tab-content">
+                <p class="desc">Podgląd wszystkich czujników, delt temperatur
+                    i stanów urządzeń w jednym miejscu. Przydatne do diagnostyki
+                    i konfiguracji parametrów.</p>
+                <section class="card">
+                    <h2>📊 Diagnostyka</h2>
+                    <div class="diag-grid">
+                        <div class="diag-group">
+                            <div class="diag-group-title">🌡️ Temperatury</div>
+                            <div class="diag-item">
+                                <span class="diag-label">W domu:</span>
+                                <span class="diag-value"
+                                    id="diagHouseTemp">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Za mieszaczem:</span>
+                                <span class="diag-value"
+                                    id="diagMixerTemp">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Powrót:</span>
+                                <span class="diag-value"
+                                    id="diagReturnTemp">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Kolektor:</span>
+                                <span class="diag-value"
+                                    id="diagCollectorTemp">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Bufor Góra:</span>
+                                <span class="diag-value"
+                                    id="diagBufferTopTemp">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Bufor Dół:</span>
+                                <span class="diag-value"
+                                    id="diagBufferBottomTemp">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Woda Góra:</span>
+                                <span class="diag-value"
+                                    id="diagWaterTopTemp">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Woda Dół:</span>
+                                <span class="diag-value"
+                                    id="diagWaterBottomTemp">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">🌡️ Zewnętrzna:</span>
+                                <span class="diag-value"
+                                    id="diagOutdoorTemp">--.- °C</span>
+                            </div>
+                        </div>
+                        <div class="diag-group">
+                            <div class="diag-group-title">📐 Delty</div>
+                            <div class="diag-item">
+                                <span class="diag-label">Kolektor − woda
+                                    dół:</span>
+                                <span class="diag-value"
+                                    id="deltaCollectorWater">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Woda góra − bufor
+                                    dół:</span>
+                                <span class="diag-value"
+                                    id="deltaWaterBuffer">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Bufor góra − woda
+                                    góra:</span>
+                                <span class="diag-value"
+                                    id="deltaBufferWater">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Bufor góra − bufor
+                                    dół:</span>
+                                <span class="diag-value"
+                                    id="deltaBufferTopBottom">--.- °C</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">Woda góra − woda
+                                    dół:</span>
+                                <span class="diag-value"
+                                    id="deltaWaterTopBottom">--.- °C</span>
+                            </div>
+                        </div>
+                        <div class="diag-group">
+                            <div class="diag-group-title">⚙️ Status
+                                urządzeń</div>
+                            <div class="diag-item">
+                                <span class="diag-label">☀️ Pompa
+                                    solarna:</span>
+                                <span class="diag-value"
+                                    id="diagSolarPump">Wyłączona</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">📦 Pompa obiegu:</span>
+                                <span class="diag-value"
+                                    id="diagBufferPump">Wyłączona</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">🚿 Zawór:</span>
+                                <span class="diag-value"
+                                    id="diagValve">Zamknięty</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">🔄 Kierunek:</span>
+                                <span class="diag-value"
+                                    id="currentDirection">Brak</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">🔥 Pompa CO:</span>
+                                <span class="diag-value"
+                                    id="diagCoPump">Wyłączona</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">📋 Faza CO:</span>
+                                <span class="diag-value"
+                                    id="diagCoPhase">Oczekiwanie</span>
+                            </div>
+                            <div class="diag-item">
+                                <span class="diag-label">🔧 Mieszacz:</span>
+                                <span class="diag-value"
+                                    id="diagMixerPercent">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </div>
         </div>
 
-        <div class="bottom-nav">
-            <div class="nav-item active"
-                onclick="showPage('Ogrzewanie', this)">
-                <span class="icon">🔥</span>
-                Ogrzewanie
-            </div>
-
-            <div class="nav-item" onclick="showPage('Solary', this)">
-                <span class="icon">☀️</span>
-                Solary
-            </div>
-
-            <div class="nav-item" onclick="showPage('Wykres', this)">
-                <span class="icon">📞</span>
-                Wykres
+        <!-- Modal alert -->
+        <div id="alertModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <span class="modal-icon" id="alertIcon">✅</span>
+                    <span class="modal-title" id="alertTitle">Sukces</span>
+                </div>
+                <div class="modal-body">
+                    <p id="alertMessage"></p>
+                </div>
+                <div class="modal-footer">
+                    <button id="alertOkBtn" class="btn btn-modal">OK</button>
+                </div>
             </div>
         </div>
+
+        <!-- Modal potwierdzenia -->
+        <div id="confirmModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <span class="modal-icon">❓</span>
+                    <span class="modal-title">Potwierdzenie</span>
+                </div>
+                <div class="modal-body">
+                    <p id="confirmMessage"></p>
+                </div>
+                <div class="modal-footer">
+                    <button id="confirmCancelBtn"
+                        class="btn btn-modal-cancel">Anuluj</button>
+                    <button id="confirmOkBtn" class="btn btn-modal-confirm">Tak,
+                        wykonaj</button>
+                </div>
+            </div>
+        </div>
+
+        <script src="app.js"></script>
+    </body>
+</html>
