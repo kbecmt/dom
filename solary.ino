@@ -1,7 +1,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <SPIFFS.h>
-#include <ArduinoJson.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -478,6 +477,7 @@ void setupWebServer() {
         server.send(200, "application/json", "{\"status\":\"ok\"}");
     });
 
+    server.sendHeader("Access-Control-Allow-Origin", "*");
     server.begin();
     Serial.println("Server started");
 }
