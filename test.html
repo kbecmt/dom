@@ -1,0 +1,21 @@
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Podole</title>
+<link rel="stylesheet" href="https://kbecmt.github.io/dom/style.css">
+</head>
+<body>
+
+<div id="tresc"></div>
+<script>
+    fetch("https://raw.githubusercontent.com/kbecmt/dom/refs/heads/main/index.html")
+  .then(response => response.text())
+  .then(html => {
+    tresc.innerHTML = html;
+    if (typeof initApp === 'function') initApp();
+  });
+</script>
+<script src="https://kbecmt.github.io/dom/app.js"></script>
+</body>
+</html>
