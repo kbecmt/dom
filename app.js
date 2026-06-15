@@ -3,12 +3,12 @@
 // =========================================
 
 const API_BASE = "http://192.168.0.139";
-var zapisDoGoogleFormm = 0;
 const state = {
     connected: false,
     pollingInterval: null,
     simMode: false,
-    initialized: false
+    initialized: false,
+    googleLogged: false
 };
 
 // Cache dla elementów DOM, aby nie szukać ich przy każdej aktualizacji
@@ -297,7 +297,7 @@ function simulateData() {
 }
 async function zapisDoGoogleForm(ts, twg, twd) {
   const formUrl =
-    "http://docs.google.com/forms/u/0/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse";
+    "https://docs.google.com/forms/u/0/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse?edit2=2_ABaOnufvPq7jH7-CGeFt-fPJcMIWGR5GMl6RbZReru0Z3I_cx8XzSK9wwCTr_31sxEHpnIM";
 
   const data = new URLSearchParams();
   data.append("entry.1561554265", ts);  
@@ -310,6 +310,8 @@ async function zapisDoGoogleForm(ts, twg, twd) {
     body: data
   });
 
+    state.googleLogged = true;
+    updateLed('googleLoggingStatus', true, 'Wysłano', 'Oczekiwanie');
   console.log("wykonane");
 }
 // ============= AKTUALIZACJA UI =============
@@ -345,10 +347,10 @@ function updateAll(data) {
     }
     Object.keys(diagTemps).forEach(id => setText(id, fmt(diagTemps[id])));
 
-    if (zapisDoGoogleForm == 0) {
-        zapisDoGoogleForm("sol.collector", "sol.waterTop", "sol.waterBottom");
-        zapisDoGoogleForm =1;
+    if (!state.googleLogged && sol.collector && sol.waterTop && sol.waterBottom) {
+        zapisDoGoogleForm(sol.collector, sol.waterTop, sol.waterBottom);
     }
+
     // Delta solarna w zakładce Solary
     const solDelta = (sol.collector && sol.waterBottom)
         ? (sol.collector - sol.waterBottom).toFixed(1) + ' °C'

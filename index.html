@@ -24,6 +24,7 @@
                 <button class="tab-btn" data-tab="tab-solary">☀️ Solary</button>
                 <button class="tab-btn" data-tab="tab-woda-bufor">⬆️ Woda-Bufor</button>
                 <button class="tab-btn" data-tab="tab-bufor-woda">⬇️ Bufor-Woda</button>
+                <button class="tab-btn" data-tab="tab-internet">🌐 Internet</button>
                 <button class="tab-btn" data-tab="tab-sterowanie">🎮 Sterowanie
                     ręczne</button>
                 <button class="tab-btn" data-tab="tab-diagnostyka">📊
@@ -657,6 +658,23 @@
                                 <span class="diag-value"
                                     id="diagMixerPercent">0%</span>
                             </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ===== ZAKŁADKA: Internet ===== -->
+            <div id="tab-internet" class="tab-content">
+                <section class="card">
+                    <h2>🌐 Logowanie do Arkuszy Google</h2>
+                    <p class="desc">Status wysyłania parametrów pomiarowych do zewnętrznego arkusza kalkulacyjnego przez Google Forms.</p>
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <span class="status-label">Status wysyłki danych</span>
+                            <span class="status-indicator" id="googleLoggingStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Oczekiwanie</span>
+                            </span>
                         </div>
                     </div>
                 </section>
