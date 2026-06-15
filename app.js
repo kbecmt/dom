@@ -3,7 +3,7 @@
 // =========================================
 
 const API_BASE = "http://192.168.0.139";
-
+var zapisDoGoogleFormm = 0;
 const state = {
     connected: false,
     pollingInterval: null,
@@ -42,7 +42,6 @@ window.initApp = () => {
     checkConnection();
     startPolling();
 };
-
 function setupTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -296,7 +295,23 @@ function simulateData() {
         outdoorTemp: rd(sim.outdoorTemp)
     });
 }
+async function zapisDoGoogleForm(ts, twg, twd) {
+  const formUrl =
+    "http://docs.google.com/forms/u/0/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse";
 
+  const data = new URLSearchParams();
+  data.append("entry.1561554265", ts);  
+  data.append("entry.2118651019", twg);  
+  data.append("entry.607098449", twd);   
+
+  await fetch(formUrl, {
+    method: "POST",
+    mode: "no-cors",
+    body: data
+  });
+
+  console.log("wykonane");
+}
 // ============= AKTUALIZACJA UI =============
 
 function updateAll(data) {
@@ -330,6 +345,10 @@ function updateAll(data) {
     }
     Object.keys(diagTemps).forEach(id => setText(id, fmt(diagTemps[id])));
 
+    if (zapisDoGoogleForm == 0) {
+        zapisDoGoogleForm("sol.collector", "sol.waterTop", "sol.waterBottom");
+        zapisDoGoogleForm =1;
+    }
     // Delta solarna w zakładce Solary
     const solDelta = (sol.collector && sol.waterBottom)
         ? (sol.collector - sol.waterBottom).toFixed(1) + ' °C'
