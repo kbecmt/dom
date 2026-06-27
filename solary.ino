@@ -14,7 +14,8 @@
 #define WIFI_PASSWORD "polpolpol1"
 #endif
 
-#define WIFI_RETRY_INTERVAL_MS 30000
+#define WIFI_STATUS_LOG_INTERVAL_MS 30000
+#define WIFI_CONNECT_GRACE_MS 120000
 
 #define WIFI_USE_STATIC_IP true
 IPAddress local_IP(192, 168, 1, 139);
@@ -515,10 +516,10 @@ void handleWiFi()
 
     wasConnected = false;
 
-    if (millis() - lastWifiCheck >= WIFI_RETRY_INTERVAL_MS)
+    if (millis() - lastWifiCheck >= WIFI_STATUS_LOG_INTERVAL_MS)
     {
         lastWifiCheck = millis();
-        Serial.printf("WiFi status=%d, ponawiam połączenie...\n", status);
+        Serial.printf("WiFi status=%d, czekam na połączenie...\n", status);
         connectToWiFi();
     }
 }
@@ -540,14 +541,10 @@ void connectToWiFi()
     if (status == WL_CONNECTED)
         return;
 
-    if (credentialsStarted && millis() - lastConnectAttempt < WIFI_RETRY_INTERVAL_MS)
-        return;
-
-    lastConnectAttempt = millis();
-
     if (!credentialsStarted)
     {
         credentialsStarted = true;
+        lastConnectAttempt = millis();
         Serial.print("Łączę z WiFi...");
         if (WIFI_USE_STATIC_IP && !WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
         {
@@ -558,9 +555,19 @@ void connectToWiFi()
         return;
     }
 
-    Serial.print("Ponawiam WiFi bez zmiany konfiguracji...");
-    WiFi.reconnect();
-    Serial.println(" reconnect().");
+    if (millis() - lastConnectAttempt < WIFI_CONNECT_GRACE_MS)
+        return;
+
+    lastConnectAttempt = millis();
+    Serial.print("WiFi: próba trwa zbyt długo, restartuję połączenie...");
+    WiFi.disconnect(false, false);
+    delay(1000);
+    if (WIFI_USE_STATIC_IP && !WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
+    {
+        Serial.print(" nie udało się ustawić stałego IP.");
+    }
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.println(" nowa próba rozpoczęta.");
 }
 
 // ============= CZUJNIKI =============
