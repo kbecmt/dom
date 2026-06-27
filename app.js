@@ -39,11 +39,39 @@ function initApp() {
 
     setupTabs();
     setupEventListeners();
+    setupSwipeNavigation();
     checkConnection();
     startPolling();
 };
 
-function setupTabs() {
+function setupSwipeNavigation() {
+    const container = document.querySelector('.container');
+    let touchstartX = 0;
+    let touchendX = 0;
+
+    container.addEventListener('touchstart', e => {
+        touchstartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    container.addEventListener('touchend', e => {
+        touchendX = e.changedTouches[0].screenX;
+        handleSwipe();
+    });
+
+    function handleSwipe() {
+        const swipeThreshold = 50; // Minimalna odległość dla gestu
+        const deltaX = touchendX - touchstartX;
+
+        if (Math.abs(deltaX) < swipeThreshold) return;
+
+        const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
+        const activeButton = document.querySelector('.tab-btn.active');
+        const currentIndex = tabButtons.indexOf(activeButton);
+
+        const newIndex = (deltaX > 0) ? currentIndex - 1 : currentIndex + 1;
+        if (newIndex >= 0 && newIndex < tabButtons.length) tabButtons[newIndex].click();
+    }
+}function setupTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -81,7 +109,7 @@ function disableSimulation() {
 
 function startPolling() {
     if (state.pollingInterval) clearInterval(state.pollingInterval);
-    state.pollingInterval = setInterval(fetchData, 5000);
+    state.pollingInterval = setInterval(fetchData, 15000); // Zmieniono na 15 sekund
 }
 
 function setupEventListeners() {
@@ -411,6 +439,18 @@ function updateAll(data) {
     const dirBW = buf.direction === 'bufor->woda';
     updateLed('directionLedWB', dirWB, '⬆️ Woda → Bufor', 'Brak');
     updateLed('directionLedBW', dirBW, '⬇️ Bufor → Woda', 'Brak');
+    
+    // Temperatury i delty dla zakładek W-B i B-W
+    setText('wbWaterTopTemp', fmt(sol.waterTop));
+    setText('wbBufferBottomTemp', fmt(buf.bufferBottom));
+    const wbDelta = (sol.waterTop && buf.bufferBottom) ? (sol.waterTop - buf.bufferBottom).toFixed(1) : '--.-';
+    setText('wbDelta', wbDelta);
+
+    setText('bwBufferTopTemp', fmt(buf.bufferTop));
+    setText('bwWaterTopTemp', fmt(sol.waterTop));
+    const bwDelta = (buf.bufferTop && sol.waterTop) ? (buf.bufferTop - sol.waterTop).toFixed(1) : '--.-';
+    setText('bwDelta', bwDelta);
+
 
     // Kierunek
     const dirLed = getEl('directionLed');

@@ -205,6 +205,26 @@
                 <section class="card">
                     <h2>⬆️ Kierunek: Woda → Bufor</h2>
                     <p class="desc">Przekazywanie nadmiaru ciepła z zasobnika wody do bufora CO. Działa tylko gdy temp. wody góra > min. temp. wody.</p>
+                    <div class="sensor-grid">
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Góra</div>
+                            <div class="sensor-value" id="wbWaterTopTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Bufor Dół</div>
+                            <div class="sensor-value" id="wbBufferBottomTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">📐 Delta</div>
+                            <div class="sensor-value" id="wbDelta">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                    </div>
+
+
+
                     <div class="status-grid">
                         <div class="status-item">
                             <span class="status-label">Pompa obiegu</span>
@@ -258,6 +278,26 @@
                 <section class="card">
                     <h2>⬇️ Kierunek: Bufor → Woda</h2>
                     <p class="desc">Ogrzewanie wody ciepłem zgromadzonym w buforze CO. Działa tylko gdy temp. wody góra < min. temp. wody.</p>
+                    <div class="sensor-grid">
+                        <div class="sensor-item">
+                            <div class="sensor-label">Bufor Góra</div>
+                            <div class="sensor-value" id="bwBufferTopTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Góra</div>
+                            <div class="sensor-value" id="bwWaterTopTemp">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">📐 Delta</div>
+                            <div class="sensor-value" id="bwDelta">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                    </div>
+
+
+
                     <div class="status-grid">
                         <div class="status-item">
                             <span class="status-label">Pompa obiegu</span>

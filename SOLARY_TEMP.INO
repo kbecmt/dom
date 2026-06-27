@@ -1,12 +1,13 @@
 #include <dummy.h>
 #include <WiFi.h>
-#include <WebServer.h>
+#include <ESPAsyncWebServer.h>
 #include <Preferences.h> // Wymagane dla trwałego przechowywania ustawień
 #include <ArduinoJson.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-//
+
+// ===== HTML (RENAMED - safe ASCII) =====
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
@@ -35,10 +36,11 @@ const char index_html[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
+
 // ============= KONFIGURACJA WIFI =============
-// IPAddress local_IP(192, 168, 0, 139);
-// IPAddress gateway(192, 168, 0, 1);
-// IPAddress subnet(255, 255, 255, 0);
+//IPAddress local_IP(192, 168, 0, 139);
+//IPAddress gateway(192, 168, 0, 1);
+//IPAddress subnet(255, 255, 255, 0);
 
 // ============= PINY GPIO =============
 #define ONE_WIRE_BUS 32
@@ -47,11 +49,11 @@ DallasTemperature sensors(&oneWire);
 
 /*
 
-00:15:22.777 -> Adres: 28 DA 3A B2 A5 21 01 22
-rezerwa -> Adres: 28 D6 D7 D7 10 22 08 38
-out -> Adres: 28 4B E3 18 0D 00 00 33
-bg: 28 A7 C1 25 A6 21 01 A5
-mieszacz -> Adres: 28 77 C2 18 0D 00 00 96
+00:15:22.777 -> Adres: 28 DA 3A B2 A5 21 01 22 
+rezerwa -> Adres: 28 D6 D7 D7 10 22 08 38 
+out -> Adres: 28 4B E3 18 0D 00 00 33 
+bg: 28 A7 C1 25 A6 21 01 A5 
+mieszacz -> Adres: 28 77 C2 18 0D 00 00 96 
 
 
 rezerwa = {0x28, 0x61, 0x64, 0x0A, 0xF3, 0xF7, 0x95, 0x4F};
@@ -79,18 +81,14 @@ DeviceAddress SENSOR_OUTDOOR = {0x28, 0x4B, 0xE3, 0x18, 0x0D, 0x00, 0x00, 0x33};
 #define RELAY_CO_PUMP 26     // Pompa CO
 #define RELAY_MIXER_OPEN 33  // Mieszacz otwórz
 #define RELAY_MIXER_CLOSE 25 // Mieszacz zamknij
-#define LED 13               // Mieszacz zamknij
-#define BUZZER 17            // Mieszacz zamknij
+#define LED 13 // Mieszacz zamknij
+#define BUZZER 17 // Mieszacz zamknij
 
 #define IMPULSE_MS 10000
 
 // Optymalizacja odczytu DS18B20
 #define CONVERSION_TIMEOUT 750 // Czas w ms na konwersję dla 12-bitowej rozdzielczości
-enum TempState
-{
-    TEMP_STATE_IDLE,
-    TEMP_STATE_WAITING
-};
+enum TempState { TEMP_STATE_IDLE, TEMP_STATE_WAITING };
 TempState tempState = TEMP_STATE_IDLE;
 unsigned long conversionStartTime = 0;
 
@@ -127,22 +125,21 @@ struct SolarSystem
     float coDeltaOn = 2.0;
     float coDeltaOff = 1.0;
     bool coPumpActive = false;
-    int mixerPercent = 0;                 // 0-100% otwarcia mieszacza
-    unsigned long mixerTimer = 0;         // licznik ms dla mieszacza
-    bool mixerRunning = false;            // true = trwa ruch mieszacza
-    bool mixerDirection = false;          // true = otwieranie, false = zamykanie
+    int mixerPercent = 0;         // 0-100% otwarcia mieszacza
+    unsigned long mixerTimer = 0; // licznik ms dla mieszacza
+    bool mixerRunning = false;    // true = trwa ruch mieszacza
+    bool mixerDirection = false;  // true = otwieranie, false = zamykanie
     unsigned long valveActionEndTime = 0; // Czas zakończenia impulsu zaworu
-    bool valveActionPending = false;      // Czy impuls zaworu jest w trakcie
+    bool valveActionPending = false; // Czy impuls zaworu jest w trakcie
     unsigned long mixerStepEnd = 0;
     String coPhase = "idle";        // idle, starting, running, stopping
     unsigned long coCheckTimer = 0; // timer 30s do sprawdzania temp za mieszaczem
 };
-struct AutomationState
-{
-    bool autoCoEnabled = true;
-    bool autoSolarEnabled = true;
-    bool autoWbEnabled = true; // Woda -> Bufor
-    bool autoBwEnabled = true; // Bufor -> Woda
+struct AutomationState {
+  bool autoCoEnabled = true;
+  bool autoSolarEnabled = true;
+  bool autoWbEnabled = true; // Woda -> Bufor
+  bool autoBwEnabled = true; // Bufor -> Woda
 };
 
 // Forward declarations
@@ -157,7 +154,7 @@ void handleCO();
 
 SolarSystem solar;
 AutomationState automationState;
-WebServer server(80);
+AsyncWebServer server(80);
 
 // ============= LittleFS =============
 
@@ -166,19 +163,19 @@ void loadSettings()
     Preferences prefs;
     prefs.begin("solar", true); // Tryb tylko do odczytu
 
-    solar.maxWaterTemp = prefs.getFloat("maxWaterTemp", 85.0);
-    solar.solarDeltaOn = prefs.getFloat("solarDeltaOn", 8.0);
-    solar.solarDeltaOff = prefs.getFloat("solarDeltaOff", 4.0);
-    solar.maxBufferTemp = prefs.getFloat("maxBufferTemp", 85.0);
-    solar.wodaBuforDeltaOn = prefs.getFloat("wodaBuforDeltaOn", 8.0);
+    solar.maxWaterTemp      = prefs.getFloat("maxWaterTemp", 85.0);
+    solar.solarDeltaOn      = prefs.getFloat("solarDeltaOn", 8.0);
+    solar.solarDeltaOff     = prefs.getFloat("solarDeltaOff", 4.0);
+    solar.maxBufferTemp     = prefs.getFloat("maxBufferTemp", 85.0);
+    solar.wodaBuforDeltaOn  = prefs.getFloat("wodaBuforDeltaOn", 8.0);
     solar.wodaBuforDeltaOff = prefs.getFloat("wodaBuforDeltaOff", 4.0);
-    solar.buforWodaDeltaOn = prefs.getFloat("buforWodaDeltaOn", 10.0);
+    solar.buforWodaDeltaOn  = prefs.getFloat("buforWodaDeltaOn", 10.0);
     solar.buforWodaDeltaOff = prefs.getFloat("buforWodaDeltaOff", 3.0);
-    solar.coMaxMixerTemp = prefs.getFloat("coMaxMixerTemp", 40.0);
-    solar.coTargetTemp = prefs.getFloat("coTargetTemp", 20.0);
-    solar.coDeltaOn = prefs.getFloat("coDeltaOn", 2.0);
-    solar.coDeltaOff = prefs.getFloat("coDeltaOff", 1.0);
-    solar.minWodaTemp = prefs.getFloat("minWodaTemp", 50.0);
+    solar.coMaxMixerTemp    = prefs.getFloat("coMaxMixerTemp", 40.0); // Ujednolicona nazwa klucza
+    solar.coTargetTemp      = prefs.getFloat("coTargetTemp", 20.0);
+    solar.coDeltaOn         = prefs.getFloat("coDeltaOn", 2.0);
+    solar.coDeltaOff        = prefs.getFloat("coDeltaOff", 1.0);
+    solar.minWodaTemp       = prefs.getFloat("minWodaTemp", 50.0);
 
     // Wczytaj stan trybów
     automationState.autoCoEnabled = prefs.getBool("autoCo", true);
@@ -195,19 +192,19 @@ void saveSettings()
     Preferences prefs;
     prefs.begin("solar", false); // Tryb zapisu
 
-    prefs.putFloat("maxWaterTemp", solar.maxWaterTemp);
-    prefs.putFloat("solarDeltaOn", solar.solarDeltaOn);
+    prefs.putFloat("maxWaterTemp",  solar.maxWaterTemp);
+    prefs.putFloat("solarDeltaOn",  solar.solarDeltaOn);
     prefs.putFloat("solarDeltaOff", solar.solarDeltaOff);
     prefs.putFloat("maxBufferTemp", solar.maxBufferTemp);
-    prefs.putFloat("wodaBuforDeltaOn", solar.wodaBuforDeltaOn);
-    prefs.putFloat("wodaBuforDeltaOff", solar.wodaBuforDeltaOff);
-    prefs.putFloat("buforWodaDeltaOn", solar.buforWodaDeltaOn);
-    prefs.putFloat("buforWodaDeltaOff", solar.buforWodaDeltaOff);
-    prefs.putFloat("coMaxMixerTemp", solar.coMaxMixerTemp);
-    prefs.putFloat("coTargetTemp", solar.coTargetTemp);
-    prefs.putFloat("coDeltaOn", solar.coDeltaOn);
-    prefs.putFloat("coDeltaOff", solar.coDeltaOff);
-    prefs.putFloat("minWodaTemp", solar.minWodaTemp);
+    prefs.putFloat("wodaBuforDeltaOn",     solar.wodaBuforDeltaOn);
+    prefs.putFloat("wodaBuforDeltaOff",    solar.wodaBuforDeltaOff);
+    prefs.putFloat("buforWodaDeltaOn",     solar.buforWodaDeltaOn);
+    prefs.putFloat("buforWodaDeltaOff",    solar.buforWodaDeltaOff);
+    prefs.putFloat("coMaxMixerTemp",  solar.coMaxMixerTemp); // Ujednolicona nazwa klucza
+    prefs.putFloat("coTargetTemp",  solar.coTargetTemp);
+    prefs.putFloat("coDeltaOn",     solar.coDeltaOn);
+    prefs.putFloat("coDeltaOff",    solar.coDeltaOff);
+    prefs.putFloat("minWodaTemp",   solar.minWodaTemp);
 
     // Zapisz stan trybów
     prefs.putBool("autoCo", automationState.autoCoEnabled);
@@ -261,30 +258,27 @@ void loop()
 {
     // Nieblokujące sprawdzanie i ponawianie połączenia WiFi
     static unsigned long lastWifiCheck = 0;
-    const unsigned long wifiCheckInterval = 30000; // Sprawdzaj co 30 sekund
+    const unsigned long wifiCheckInterval = 15000; // Sprawdzaj co 15 sekund
 
-    if (millis() - lastWifiCheck >= wifiCheckInterval)
-    {
+    if (millis() - lastWifiCheck >= wifiCheckInterval) {
         lastWifiCheck = millis();
-        if (WiFi.status() != WL_CONNECTED)
-        {
+        if (WiFi.status() != WL_CONNECTED) {
             Serial.println("Rozłączono z WiFi. Próbuję połączyć ponownie...");
             WiFi.reconnect();
         }
     }
-    // Zapewnij maksymalną responsywność serwera WWW
-    server.handleClient();
 
     // Użyj nieblokującego timera do regularnych zadań
-    static unsigned long lastUpdate = 0;
-    const unsigned long updateInterval = 20000; // Uruchamiaj logikę co 20 sekund
+    static unsigned long lastRun = 0;
+    const unsigned long interval = 2000; // Uruchamiaj logikę co 2 sekundy
 
-    // Inicjuj odczyt co `updateInterval`
-    if (millis() - lastUpdate >= updateInterval)
-    {
-        lastUpdate = millis();
-        if (readTemps()) { // Sprawdź, czy poprzedni odczyt się zakończył i rozpocznij nowy
-            updateControl(); // Jeśli tak, zaktualizuj logikę
+    if (millis() - lastRun >= interval) {
+        lastRun = millis();
+        digitalWrite(LED, !digitalRead(LED)); // Miganie diodą jako "heartbeat"
+        
+        // Uruchom logikę sterowania tylko jeśli odczytano nowe temperatury
+        if (readTemps()) {
+            updateControl();
         }
     }
 
@@ -298,7 +292,15 @@ void loop()
         solar.valveActionPending = false;
         Serial.println("Impuls zaworu zakończony.");
     }
+
 }
+
+
+
+
+
+
+
 
 void checkMixerTimer()
 {
@@ -326,13 +328,16 @@ void checkMixerTimer()
         Serial.printf("Mieszacz: %d%%\n", solar.mixerPercent);
     }
 }
+
 // ============= WiFi =============
 
 void connectToWiFi()
 {
     Serial.print("Łączę z WiFi...");
+
+    //WiFi.config(local_IP, gateway, subnet);
+    WiFi.setAutoReconnect(true);
     WiFi.begin("ITway.dev", "polpolpol1");
-    Serial.println(" Rozpoczęto próbę połączenia.");
     for (int i = 0; i < 20 && WiFi.status() != WL_CONNECTED; i++)
     {
         delay(500);
@@ -365,18 +370,16 @@ float getTemp(const DeviceAddress addr, const char *label)
 
 bool readTemps()
 {
-    if (tempState == TEMP_STATE_IDLE)
-    {
+    if (tempState == TEMP_STATE_IDLE) {
         // Krok 1: Wyślij żądanie konwersji do wszystkich czujników
         sensors.requestTemperatures();
         conversionStartTime = millis();
         tempState = TEMP_STATE_WAITING;
         Serial.println("DS18B20: Rozpoczęto konwersję temperatur.");
         return false; // Dane nie są jeszcze gotowe
-    }
-
-    if (tempState == TEMP_STATE_WAITING && millis() - conversionStartTime >= CONVERSION_TIMEOUT)
-    {
+    } 
+    
+    if (tempState == TEMP_STATE_WAITING && millis() - conversionStartTime >= CONVERSION_TIMEOUT) {
         // Krok 2: Czas na konwersję minął, odczytaj dane
         Serial.println("DS18B20: Odczytuję temperatury po konwersji.");
         solar.bufferTopTemp = getTemp(SENSOR_BUFFER_TOP, "Bufor Góra");
@@ -388,9 +391,9 @@ bool readTemps()
         solar.mixerTemp = getTemp(SENSOR_MIXER, "Mieszacz");
         solar.returnTemp = getTemp(SENSOR_RETURN, "Powrót");
         solar.outdoorTemp = getTemp(SENSOR_OUTDOOR, "Zewn");
-
+        
         tempState = TEMP_STATE_IDLE; // Gotowy na następny cykl
-        return true;                 // Dane są gotowe
+        return true; // Dane są gotowe
     }
 
     return false; // Dane nie są jeszcze gotowe (oczekiwanie)
@@ -416,27 +419,21 @@ void mixerStep(bool open)
 void updateControl()
 {
     // --- Solary ---
-    if (!automationState.autoSolarEnabled)
-    {
-        if (solar.solarPumpActive)
-        {
+    if (!automationState.autoSolarEnabled) {
+        if (solar.solarPumpActive) {
             solar.solarPumpActive = false;
             digitalWrite(RELAY_SOLAR_PUMP, LOW);
             Serial.println("=> Pompa solarna OFF (tryb wyłączony)");
         }
-    }
-    else
-    {
+    } else {
         // Logika sterowania pompą solarną (jeśli tryb jest włączony)
         handleSolarPump();
     }
 
     // --- Wspólny obieg bufor<->woda ---
-    if (!automationState.autoWbEnabled && !automationState.autoBwEnabled)
-    {
+    if (!automationState.autoWbEnabled && !automationState.autoBwEnabled) {
         // Jeśli tryb jest wyłączony, upewnij się, że obieg jest zatrzymany
-        if (!solar.valveActionPending && (solar.bufferPumpActive || solar.valveOpen))
-        {
+        if (!solar.valveActionPending && (solar.bufferPumpActive || solar.valveOpen)) {
             digitalWrite(RELAY_BUFFER_PUMP, LOW);
             digitalWrite(RELAY_VALVE_CLOSE, HIGH);
             solar.valveActionEndTime = millis() + IMPULSE_MS;
@@ -447,9 +444,7 @@ void updateControl()
             solar.direction = "brak";
             Serial.println("=> Obieg OFF (tryb wyłączony)");
         }
-    }
-    else
-    {
+    } else {
         // Logika sterowania obiegiem (jeśli tryb jest włączony)
         handleBufferCircuit();
     }
@@ -462,17 +457,14 @@ void updateControl()
     //    - > maxMixerTemp → zamknij na 5s
     //    - temp zadana - temp domu <= deltaOff → STOPPING
     // 4. STOPPING: zamknij mieszacz do 0% → IDLE
-    if (!automationState.autoCoEnabled)
-    {
+    if (!automationState.autoCoEnabled) {
         // Jeśli tryb CO jest wyłączony, przejdź do zatrzymywania
-        if (solar.coPhase != "idle" && solar.coPhase != "stopping")
-        {
+        if (solar.coPhase != "idle" && solar.coPhase != "stopping") {
             solar.coPumpActive = false;
             digitalWrite(RELAY_CO_PUMP, LOW);
             solar.coPhase = "stopping";
             Serial.println("=> CO: STOPPING (tryb wyłączony)");
-            if (!solar.mixerRunning && solar.mixerPercent > 0)
-            {
+            if (!solar.mixerRunning && solar.mixerPercent > 0) {
                 mixerStep(false); // zacznij zamykać
             }
         }
@@ -481,8 +473,7 @@ void updateControl()
     handleCO();
 }
 
-void handleBufferCircuit()
-{
+void handleBufferCircuit() {
 
     // --- Wspólny obieg bufor<->woda ---
     float dWB = solar.waterTopTemp - solar.bufferBottomTemp;
@@ -513,7 +504,7 @@ void handleBufferCircuit()
             digitalWrite(RELAY_VALVE_OPEN, HIGH);
             solar.valveActionEndTime = millis() + IMPULSE_MS;
             solar.valveActionPending = true;
-
+            
             // Włączamy pompę od razu lub po zakończeniu impulsu (tutaj: od razu dla uproszczenia)
             digitalWrite(RELAY_BUFFER_PUMP, HIGH);
             solar.bufferPumpActive = true;
@@ -536,7 +527,7 @@ void handleBufferCircuit()
         {
             // Najpierw wyłączamy pompę
             digitalWrite(RELAY_BUFFER_PUMP, LOW);
-
+            
             // Start nieblokującego impulsu zamykania
             digitalWrite(RELAY_VALVE_CLOSE, HIGH);
             solar.valveActionEndTime = millis() + IMPULSE_MS;
@@ -550,8 +541,7 @@ void handleBufferCircuit()
     }
 }
 
-void handleSolarPump()
-{
+void handleSolarPump() {
     float dSolar = solar.collectorTemp - solar.waterBottomTemp;
     if (dSolar > solar.solarDeltaOn && solar.waterTopTemp < solar.maxWaterTemp)
     {
@@ -573,85 +563,62 @@ void handleSolarPump()
     }
 }
 
-void handleCO()
-{
+void handleCO() {
     float deltaDomu = solar.coTargetTemp - solar.houseTemp;
 
-    if (solar.coPhase == "idle")
-    {
-        if (automationState.autoCoEnabled && deltaDomu > solar.coDeltaOn && solar.bufferTopTemp > solar.coTargetTemp)
-        {
+    if (solar.coPhase == "idle") {
+        if (automationState.autoCoEnabled && deltaDomu > solar.coDeltaOn && solar.bufferTopTemp > solar.coTargetTemp) {
             solar.coPhase = "starting";
-            if (!solar.mixerRunning && solar.mixerPercent < 100)
-            {
+            if (!solar.mixerRunning && solar.mixerPercent < 100) {
                 mixerStep(true); // otwórz na 5s
             }
             Serial.printf("=> CO: STARTING (delta=%.1f > %.1f)\n", deltaDomu, solar.coDeltaOn);
         }
-    }
-    else if (solar.coPhase == "starting")
-    {
-        if (!solar.mixerRunning)
-        {
+    } else if (solar.coPhase == "starting") {
+        if (!solar.mixerRunning) {
             solar.coPumpActive = true;
             digitalWrite(RELAY_CO_PUMP, HIGH);
             solar.coPhase = "running";
             solar.coCheckTimer = millis();
             Serial.println("=> CO: RUNNING, pompa ON");
         }
-    }
-    else if (solar.coPhase == "running")
-    {
+    } else if (solar.coPhase == "running") { // --- Faza pracy ---
         // Sprawdzaj temperaturę za mieszaczem co zdefiniowany interwał
-        if (!solar.mixerRunning && (millis() - solar.coCheckTimer >= CO_CHECK_INTERVAL_MS))
-        {
+        if (!solar.mixerRunning && (millis() - solar.coCheckTimer >= CO_CHECK_INTERVAL_MS)) {
             solar.coCheckTimer = millis();
-            if (solar.mixerTemp < solar.coMaxMixerTemp && solar.mixerPercent < 100)
-            {
+            if (solar.mixerTemp < solar.coMaxMixerTemp && solar.mixerPercent < 100) {
                 mixerStep(true);
                 Serial.printf("=> CO: Korekta - temp. za niska (%.1f°C < %.1f°C), otwieram mieszacz.\n", solar.mixerTemp, solar.coMaxMixerTemp);
-            }
-            else if (solar.mixerTemp >= solar.coMaxMixerTemp && solar.mixerPercent > 0)
-            {
+            } else if (solar.mixerTemp >= solar.coMaxMixerTemp && solar.mixerPercent > 0) {
                 mixerStep(false);
                 Serial.printf("=> CO: Korekta - temp. za wysoka (%.1f°C >= %.1f°C), zamykam mieszacz.\n", solar.mixerTemp, solar.coMaxMixerTemp);
             }
         }
         // Warunek wyłączenia: temperatura w domu osiągnęła zadaną (z histerezą) LUB brakuje ciepła w buforze
         bool stopCondition = (solar.coTargetTemp - solar.houseTemp) <= solar.coDeltaOff;
-        if (stopCondition || solar.bufferTopTemp < solar.coTargetTemp)
-        {
+        if (stopCondition || solar.bufferTopTemp < solar.coTargetTemp) {
             solar.coPumpActive = false;
             digitalWrite(RELAY_CO_PUMP, LOW);
             solar.coPhase = "stopping";
-            Serial.printf("=> CO: STOPPING (warunek: %s, bufor: %.1f°C)\n", stopCondition ? "osiągnięto temp" : "niski bufor", solar.bufferTopTemp);
-            if (!solar.mixerRunning && solar.mixerPercent > 0)
-                mixerStep(false);
+            Serial.printf("=> CO: STOPPING (powrót=%.1f >= zadana=%.1f)\n", solar.returnTemp, solar.coTargetTemp);
+            if (!solar.mixerRunning && solar.mixerPercent > 0) mixerStep(false);
         }
-    }
-    else if (solar.coPhase == "stopping")
-    {
-        if (!solar.mixerRunning && solar.mixerPercent > 0)
-            mixerStep(false);
-        if (solar.mixerPercent <= 0 && !solar.mixerRunning)
-        {
-            solar.coPhase = "idle";
-            Serial.println("=> CO: IDLE");
-        }
+    } else if (solar.coPhase == "stopping") {
+        if (!solar.mixerRunning && solar.mixerPercent > 0) mixerStep(false);
+        if (solar.mixerPercent <= 0 && !solar.mixerRunning) { solar.coPhase = "idle"; Serial.println("=> CO: IDLE"); }
     }
 }
 // ============= SERWER =============
 
 // Funkcja do obsługi ścieżki głównej, teraz serwująca prostą wiadomość
-void handleRoot()
-{
-    server.send(200, "text/html", index_html);
+void handleRoot(AsyncWebServerRequest *request) {
+  request->send_P(200, "text/html", index_html);
 }
 
 void setupWebServer()
 {
-
-    server.on("/", handleRoot);
+    // Obsługa ścieżki głównej
+    server.on("/", HTTP_GET, handleRoot);
 
     server.on("/api/data", HTTP_GET, []()
               {
@@ -695,27 +662,27 @@ void setupWebServer()
         doc["co"]["autoWbEnabled"] = automationState.autoWbEnabled;
         doc["co"]["autoBwEnabled"] = automationState.autoBwEnabled;
 
-        server.sendHeader("Access-Control-Allow-Origin", "*");
         String out; serializeJson(doc, out);
-        server.send(200, "application/json", out); });
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", out);
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
 
-    server.on("/api/solar/settings", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+    // Handler dla ustawień z ciałem JSON (AsyncWebServer)
+    AsyncCallbackJsonWebHandler* solarSettingsHandler = new AsyncCallbackJsonWebHandler("/api/solar/settings", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        JsonObject doc = json.as<JsonObject>();
         if (doc.containsKey("maxWaterTemp")) solar.maxWaterTemp = doc["maxWaterTemp"];
         if (doc.containsKey("deltaOn")) solar.solarDeltaOn = doc["deltaOn"];
         if (doc.containsKey("deltaOff")) solar.solarDeltaOff = doc["deltaOff"];
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\"}");
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    server.addHandler(solarSettingsHandler);
 
-    server.on("/api/buffer/settings", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+    AsyncCallbackJsonWebHandler* bufferSettingsHandler = new AsyncCallbackJsonWebHandler("/api/buffer/settings", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        JsonObject doc = json.as<JsonObject>();
         if (doc.containsKey("maxBufferTemp")) solar.maxBufferTemp = doc["maxBufferTemp"];
         if (doc.containsKey("wodaBuforDeltaOn")) solar.wodaBuforDeltaOn = doc["wodaBuforDeltaOn"];
         if (doc.containsKey("wodaBuforDeltaOff")) solar.wodaBuforDeltaOff = doc["wodaBuforDeltaOff"];
@@ -723,32 +690,29 @@ void setupWebServer()
         if (doc.containsKey("buforWodaDeltaOff")) solar.buforWodaDeltaOff = doc["buforWodaDeltaOff"];
         if (doc.containsKey("minWodaTemp")) solar.minWodaTemp = doc["minWodaTemp"];
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\"}");
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    server.addHandler(bufferSettingsHandler);
 
-    server.on("/api/co/settings", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+    AsyncCallbackJsonWebHandler* coSettingsHandler = new AsyncCallbackJsonWebHandler("/api/co/settings", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        JsonObject doc = json.as<JsonObject>();
         if (doc.containsKey("maxMixerTemp")) solar.coMaxMixerTemp = doc["maxMixerTemp"];
         if (doc.containsKey("targetTemp")) solar.coTargetTemp = doc["targetTemp"];
         if (doc.containsKey("deltaOn")) solar.coDeltaOn = doc["deltaOn"];
         if (doc.containsKey("deltaOff")) solar.coDeltaOff = doc["deltaOff"];
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\"}");
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    server.addHandler(coSettingsHandler);
 
-    // Nowy endpoint do sterowania automatyką
-    server.on("/api/automation/control", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
-
+    AsyncCallbackJsonWebHandler* automationControlHandler = new AsyncCallbackJsonWebHandler("/api/automation/control", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        JsonObject doc = json.as<JsonObject>();
         const char* system = doc["system"];
         bool enabled = doc["enabled"];
-
         if (strcmp(system, "co") == 0) {
             automationState.autoCoEnabled = enabled;
         } else if (strcmp(system, "solar") == 0) {
@@ -758,42 +722,37 @@ void setupWebServer()
         } else if (strcmp(system, "bw") == 0) {
             automationState.autoBwEnabled = enabled;
         } else {
-            server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Unknown system\"}");
+            request->send(400, "application/json", "{\"status\":\"error\",\"message\":\"Unknown system\"}");
             return;
         }
-
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", "{\"status\":\"ok\"}");
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(response);
+    });
+    server.addHandler(automationControlHandler);
 
-    server.on("/api/mixer/control", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
-
+    AsyncCallbackJsonWebHandler* mixerControlHandler = new AsyncCallbackJsonWebHandler("/api/mixer/control", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        JsonObject doc = json.as<JsonObject>();
         if (doc.containsKey("action")) {
             String action = doc["action"];
             if (action == "open") {
                 if (solar.mixerPercent < 100) mixerStep(true);
-                server.send(200, "application/json", "{\"status\":\"ok\", \"message\":\"Mieszacz otwierany\"}");
+                request->send(200, "application/json", "{\"status\":\"ok\", \"message\":\"Mieszacz otwierany\"}");
             } else if (action == "close") {
                 if (solar.mixerPercent > 0) mixerStep(false);
-                server.send(200, "application/json", "{\"status\":\"ok\", \"message\":\"Mieszacz zamykany\"}");
+                request->send(200, "application/json", "{\"status\":\"ok\", \"message\":\"Mieszacz zamykany\"}");
             } else {
-                server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Nieznana akcja\"}");
+                request->send(400, "application/json", "{\"status\":\"error\", \"message\":\"Nieznana akcja\"}");
             }
         } else {
-            server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak klucza 'action'\"}");
+            request->send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak klucza 'action'\"}");
         }
-        server.sendHeader("Access-Control-Allow-Origin", "*"); });
+    });
+    server.addHandler(mixerControlHandler);
 
-    server.on("/api/relay/control", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
-
+    AsyncCallbackJsonWebHandler* relayControlHandler = new AsyncCallbackJsonWebHandler("/api/relay/control", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        JsonObject doc = json.as<JsonObject>();
         if (doc.containsKey("solar_pump")) {
             solar.solarPumpActive = doc["solar_pump"];
             digitalWrite(RELAY_SOLAR_PUMP, solar.solarPumpActive ? HIGH : LOW);
@@ -804,9 +763,8 @@ void setupWebServer()
         }
         if (doc.containsKey("valve")) {
             bool ns = doc["valve"];
-            // Upewnij się, że nie ma już aktywnego impulsu
             if (solar.valveActionPending) {
-                server.send(409, "application/json", "{\"status\":\"error\", \"message\":\"Impuls zaworu jest już w trakcie\"}");
+                request->send(409, "application/json", "{\"status\":\"error\", \"message\":\"Impuls zaworu jest już w trakcie\"}");
                 return;
             }
             if (ns && !solar.valveOpen) {
@@ -823,9 +781,18 @@ void setupWebServer()
             solar.coPumpActive = doc["co_pump"];
             digitalWrite(RELAY_CO_PUMP, solar.coPumpActive ? HIGH : LOW);
         }
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        request->send(200, "application/json", "{\"status\":\"ok\"}");
+    });
+    server.addHandler(relayControlHandler);
 
+    // Obsługa zapytań pre-flight CORS dla wszystkich ścieżek
+    server.onNotFound([](AsyncWebServerRequest *request) {
+        if (request->method() == HTTP_OPTIONS) {
+            request->send(200);
+        } else {
+            request->send(404, "text/plain", "Not found");
+        }
+    });
     server.begin();
     Serial.println("Server started");
 }
