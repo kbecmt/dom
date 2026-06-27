@@ -6,6 +6,14 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
+#ifndef WIFI_SSID
+#define WIFI_SSID "ITway.dev"
+#endif
+
+#ifndef WIFI_PASSWORD
+#define WIFI_PASSWORD "polpolpol1"
+#endif
+
 //
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -136,6 +144,11 @@ struct SolarSystem
     unsigned long mixerStepEnd = 0;
     String coPhase = "idle";        // idle, starting, running, stopping
     unsigned long coCheckTimer = 0; // timer 30s do sprawdzania temp za mieszaczem
+
+    bool solarTempsOk = false;
+    bool bufferTempsOk = false;
+    bool coTempsOk = false;
+    bool anyTempError = true;
 };
 
 bool isMixerResetting = false;
@@ -157,6 +170,14 @@ void checkMixerTimer();
 void handleSolarPump();
 void handleBufferCircuit();
 void handleCO();
+void mixerStep(bool open);
+void updateTempHealth();
+void stopSolarPump(const char *reason);
+void stopBufferCircuit(const char *reason);
+void stopCO(const char *reason);
+void addCorsHeaders();
+void sendJson(int code, const char *payload);
+bool validateSettings(float on, float off, const char *label);
 
 SolarSystem solar;
 AutomationState automationState;
@@ -220,6 +241,112 @@ void saveSettings()
 
     prefs.end();
     Serial.println("Ustawienia zapisane do Preferences.");
+}
+
+bool isValidTemp(float t)
+{
+    return !isnan(t) && t > -55.0 && t < 125.0;
+}
+
+bool inRange(float value, float minValue, float maxValue)
+{
+    return !isnan(value) && value >= minValue && value <= maxValue;
+}
+
+bool validateSettings(float on, float off, const char *label)
+{
+    if (off >= on)
+    {
+        Serial.printf("Błędne nastawy %s: deltaOff >= deltaOn\n", label);
+        return false;
+    }
+    return true;
+}
+
+void updateTempHealth()
+{
+    solar.solarTempsOk = isValidTemp(solar.collectorTemp) && isValidTemp(solar.waterBottomTemp) && isValidTemp(solar.waterTopTemp);
+    solar.bufferTempsOk = isValidTemp(solar.waterTopTemp) && isValidTemp(solar.bufferBottomTemp) && isValidTemp(solar.bufferTopTemp);
+    solar.coTempsOk = isValidTemp(solar.houseTemp) && isValidTemp(solar.mixerTemp) && isValidTemp(solar.bufferTopTemp);
+    solar.anyTempError = !solar.solarTempsOk || !solar.bufferTempsOk || !solar.coTempsOk;
+
+    if (!solar.solarTempsOk)
+        Serial.println("ALARM: Niepoprawne temperatury solarów.");
+    if (!solar.bufferTempsOk)
+        Serial.println("ALARM: Niepoprawne temperatury obiegu bufor-woda.");
+    if (!solar.coTempsOk)
+        Serial.println("ALARM: Niepoprawne temperatury CO.");
+}
+
+void stopSolarPump(const char *reason)
+{
+    if (solar.solarPumpActive)
+    {
+        digitalWrite(RELAY_SOLAR_PUMP, LOW);
+        solar.solarPumpActive = false;
+        Serial.printf("=> Pompa solarna OFF (%s)\n", reason);
+    }
+}
+
+void stopBufferCircuit(const char *reason)
+{
+    if (solar.bufferPumpActive)
+    {
+        digitalWrite(RELAY_BUFFER_PUMP, LOW);
+        solar.bufferPumpActive = false;
+    }
+
+    if (solar.valveActionPending)
+    {
+        digitalWrite(RELAY_VALVE_OPEN, LOW);
+        digitalWrite(RELAY_VALVE_CLOSE, LOW);
+        solar.valveActionPending = false;
+    }
+
+    if (!solar.valveActionPending && solar.valveOpen)
+    {
+        digitalWrite(RELAY_VALVE_CLOSE, HIGH);
+        solar.valveActionEndTime = millis() + IMPULSE_MS;
+        solar.valveActionPending = true;
+    }
+
+    if (solar.valveOpen || solar.direction != "brak")
+        Serial.printf("=> Obieg OFF (%s)\n", reason);
+
+    solar.valveOpen = false;
+    solar.direction = "brak";
+}
+
+void stopCO(const char *reason)
+{
+    if (solar.coPumpActive)
+    {
+        digitalWrite(RELAY_CO_PUMP, LOW);
+        solar.coPumpActive = false;
+        Serial.printf("=> Pompa CO OFF (%s)\n", reason);
+    }
+
+    if (solar.coPhase != "idle")
+    {
+        solar.coPhase = "stopping";
+        Serial.printf("=> CO: STOPPING (%s)\n", reason);
+    }
+
+    if (!solar.mixerRunning && solar.mixerPercent > 0)
+        mixerStep(false);
+}
+
+void addCorsHeaders()
+{
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+void sendJson(int code, const char *payload)
+{
+    addCorsHeaders();
+    server.send(code, "application/json", payload);
 }
 
 // ============= SETUP / LOOP =============
@@ -373,7 +500,7 @@ void connectToWiFi()
     Serial.print("Łączę z WiFi...");
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
-    WiFi.begin("ITway.dev", "polpolpol1");
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     Serial.println(" Rozpoczęto próbę połączenia.");
 }
 
@@ -416,6 +543,7 @@ bool readTemps()
         solar.mixerTemp = getTemp(SENSOR_MIXER, "Mieszacz");
         solar.returnTemp = getTemp(SENSOR_RETURN, "Powrót");
         solar.outdoorTemp = getTemp(SENSOR_OUTDOOR, "Zewn");
+        updateTempHealth();
 
         tempState = TEMP_STATE_IDLE; // Gotowy na następny cykl
         return true;                 // Dane są gotowe
@@ -444,14 +572,13 @@ void mixerStep(bool open)
 void updateControl()
 {
     // --- Solary ---
-    if (!automationState.autoSolarEnabled)
+    if (!solar.solarTempsOk)
     {
-        if (solar.solarPumpActive)
-        {
-            solar.solarPumpActive = false;
-            digitalWrite(RELAY_SOLAR_PUMP, LOW);
-            Serial.println("=> Pompa solarna OFF (tryb wyłączony)");
-        }
+        stopSolarPump("błąd czujnika");
+    }
+    else if (!automationState.autoSolarEnabled)
+    {
+        stopSolarPump("tryb wyłączony");
     }
     else
     {
@@ -460,21 +587,14 @@ void updateControl()
     }
 
     // --- Wspólny obieg bufor<->woda ---
-    if (!automationState.autoWbEnabled && !automationState.autoBwEnabled)
+    if (!solar.bufferTempsOk)
+    {
+        stopBufferCircuit("błąd czujnika");
+    }
+    else if (!automationState.autoWbEnabled && !automationState.autoBwEnabled)
     {
         // Jeśli tryb jest wyłączony, upewnij się, że obieg jest zatrzymany
-        if (!solar.valveActionPending && (solar.bufferPumpActive || solar.valveOpen))
-        {
-            digitalWrite(RELAY_BUFFER_PUMP, LOW);
-            digitalWrite(RELAY_VALVE_CLOSE, HIGH);
-            solar.valveActionEndTime = millis() + IMPULSE_MS;
-            solar.valveActionPending = true;
-
-            solar.bufferPumpActive = false;
-            solar.valveOpen = false;
-            solar.direction = "brak";
-            Serial.println("=> Obieg OFF (tryb wyłączony)");
-        }
+        stopBufferCircuit("tryb wyłączony");
     }
     else
     {
@@ -490,19 +610,16 @@ void updateControl()
     //    - > maxMixerTemp → zamknij na 5s
     //    - temp zadana - temp domu <= deltaOff → STOPPING
     // 4. STOPPING: zamknij mieszacz do 0% → IDLE
-    if (!automationState.autoCoEnabled)
+    if (!solar.coTempsOk)
+    {
+        stopCO("błąd czujnika");
+    }
+    else if (!automationState.autoCoEnabled)
     {
         // Jeśli tryb CO jest wyłączony, przejdź do zatrzymywania
         if (solar.coPhase != "idle" && solar.coPhase != "stopping")
         {
-            solar.coPumpActive = false;
-            digitalWrite(RELAY_CO_PUMP, LOW);
-            solar.coPhase = "stopping";
-            Serial.println("=> CO: STOPPING (tryb wyłączony)");
-            if (!solar.mixerRunning && solar.mixerPercent > 0)
-            {
-                mixerStep(false); // zacznij zamykać
-            }
+            stopCO("tryb wyłączony");
         }
     }
     // Logika CO (zawsze aktywna, aby móc zakończyć cykl)
@@ -511,6 +628,11 @@ void updateControl()
 
 void handleBufferCircuit()
 {
+    if (!solar.bufferTempsOk)
+    {
+        stopBufferCircuit("błąd czujnika");
+        return;
+    }
 
     // --- Wspólny obieg bufor<->woda ---
     float dWB = solar.waterTopTemp - solar.bufferBottomTemp;
@@ -580,6 +702,12 @@ void handleBufferCircuit()
 
 void handleSolarPump()
 {
+    if (!solar.solarTempsOk)
+    {
+        stopSolarPump("błąd czujnika");
+        return;
+    }
+
     float dSolar = solar.collectorTemp - solar.waterBottomTemp;
     if (dSolar > solar.solarDeltaOn && solar.waterTopTemp < solar.maxWaterTemp)
     {
@@ -603,6 +731,12 @@ void handleSolarPump()
 
 void handleCO()
 {
+    if (!solar.coTempsOk)
+    {
+        stopCO("błąd czujnika");
+        return;
+    }
+
     float deltaDomu = solar.coTargetTemp - solar.houseTemp;
 
     if (solar.coPhase == "idle")
@@ -699,6 +833,22 @@ void setupWebServer()
 {
 
     server.on("/", handleRoot);
+    const char *apiPaths[] = {
+        "/api/data",
+        "/api/solar/settings",
+        "/api/buffer/settings",
+        "/api/co/settings",
+        "/api/automation/control",
+        "/api/mixer/control",
+        "/api/relay/control"};
+
+    for (const char *path : apiPaths)
+    {
+        server.on(path, HTTP_OPTIONS, []()
+                  {
+            addCorsHeaders();
+            server.send(204, "text/plain", ""); });
+    }
 
     server.on("/api/data", HTTP_GET, []()
               {
@@ -735,6 +885,10 @@ void setupWebServer()
         doc["co"]["phase"] = solar.coPhase;
         doc["co"]["returnTemp"] = solar.returnTemp;
         doc["outdoorTemp"] = solar.outdoorTemp;
+        doc["health"]["solarTempsOk"] = solar.solarTempsOk;
+        doc["health"]["bufferTempsOk"] = solar.bufferTempsOk;
+        doc["health"]["coTempsOk"] = solar.coTempsOk;
+        doc["health"]["anyTempError"] = solar.anyTempError;
 
         // Dodaj nowe flagi do obiektu CO, aby pasowały do app.js
         doc["co"]["autoCoEnabled"] = automationState.autoCoEnabled;
@@ -742,118 +896,169 @@ void setupWebServer()
         doc["co"]["autoWbEnabled"] = automationState.autoWbEnabled;
         doc["co"]["autoBwEnabled"] = automationState.autoBwEnabled;
 
-        server.sendHeader("Access-Control-Allow-Origin", "*");
+        addCorsHeaders();
         String out; serializeJson(doc, out);
         server.send(200, "application/json", out); });
 
     server.on("/api/solar/settings", HTTP_POST, []()
               {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
+        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
         JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
-        if (doc.containsKey("maxWaterTemp")) solar.maxWaterTemp = doc["maxWaterTemp"];
-        if (doc.containsKey("deltaOn")) solar.solarDeltaOn = doc["deltaOn"];
-        if (doc.containsKey("deltaOff")) solar.solarDeltaOff = doc["deltaOff"];
+        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+
+        float maxWaterTemp = doc["maxWaterTemp"] | solar.maxWaterTemp;
+        float deltaOn = doc["deltaOn"] | solar.solarDeltaOn;
+        float deltaOff = doc["deltaOff"] | solar.solarDeltaOff;
+        if (!inRange(maxWaterTemp, 20, 99) || !inRange(deltaOn, 1, 30) || !inRange(deltaOff, 0.5, 20) || !validateSettings(deltaOn, deltaOff, "solarów")) {
+            sendJson(422, "{\"status\":\"error\", \"message\":\"Nieprawidłowe nastawy solarów\"}");
+            return;
+        }
+
+        solar.maxWaterTemp = maxWaterTemp;
+        solar.solarDeltaOn = deltaOn;
+        solar.solarDeltaOff = deltaOff;
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        sendJson(200, "{\"status\":\"ok\"}"); });
 
     server.on("/api/buffer/settings", HTTP_POST, []()
               {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
+        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
         JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
-        if (doc.containsKey("maxBufferTemp")) solar.maxBufferTemp = doc["maxBufferTemp"];
-        if (doc.containsKey("wodaBuforDeltaOn")) solar.wodaBuforDeltaOn = doc["wodaBuforDeltaOn"];
-        if (doc.containsKey("wodaBuforDeltaOff")) solar.wodaBuforDeltaOff = doc["wodaBuforDeltaOff"];
-        if (doc.containsKey("buforWodaDeltaOn")) solar.buforWodaDeltaOn = doc["buforWodaDeltaOn"];
-        if (doc.containsKey("buforWodaDeltaOff")) solar.buforWodaDeltaOff = doc["buforWodaDeltaOff"];
-        if (doc.containsKey("minWodaTemp")) solar.minWodaTemp = doc["minWodaTemp"];
+        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+
+        float maxBufferTemp = doc["maxBufferTemp"] | solar.maxBufferTemp;
+        float wodaBuforDeltaOn = doc["wodaBuforDeltaOn"] | solar.wodaBuforDeltaOn;
+        float wodaBuforDeltaOff = doc["wodaBuforDeltaOff"] | solar.wodaBuforDeltaOff;
+        float buforWodaDeltaOn = doc["buforWodaDeltaOn"] | solar.buforWodaDeltaOn;
+        float buforWodaDeltaOff = doc["buforWodaDeltaOff"] | solar.buforWodaDeltaOff;
+        float minWodaTemp = doc["minWodaTemp"] | solar.minWodaTemp;
+        if (!inRange(maxBufferTemp, 20, 99) || !inRange(wodaBuforDeltaOn, 1, 30) || !inRange(wodaBuforDeltaOff, 0.5, 20) ||
+            !inRange(buforWodaDeltaOn, 1, 30) || !inRange(buforWodaDeltaOff, 0.5, 20) || !inRange(minWodaTemp, 20, 80) ||
+            !validateSettings(wodaBuforDeltaOn, wodaBuforDeltaOff, "W-B") || !validateSettings(buforWodaDeltaOn, buforWodaDeltaOff, "B-W")) {
+            sendJson(422, "{\"status\":\"error\", \"message\":\"Nieprawidłowe nastawy bufora\"}");
+            return;
+        }
+
+        solar.maxBufferTemp = maxBufferTemp;
+        solar.wodaBuforDeltaOn = wodaBuforDeltaOn;
+        solar.wodaBuforDeltaOff = wodaBuforDeltaOff;
+        solar.buforWodaDeltaOn = buforWodaDeltaOn;
+        solar.buforWodaDeltaOff = buforWodaDeltaOff;
+        solar.minWodaTemp = minWodaTemp;
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        sendJson(200, "{\"status\":\"ok\"}"); });
 
     server.on("/api/co/settings", HTTP_POST, []()
               {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
+        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
         JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
-        if (doc.containsKey("maxMixerTemp")) solar.coMaxMixerTemp = doc["maxMixerTemp"];
-        if (doc.containsKey("targetTemp")) solar.coTargetTemp = doc["targetTemp"];
-        if (doc.containsKey("deltaOn")) solar.coDeltaOn = doc["deltaOn"];
-        if (doc.containsKey("deltaOff")) solar.coDeltaOff = doc["deltaOff"];
+        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+
+        float maxMixerTemp = doc["maxMixerTemp"] | solar.coMaxMixerTemp;
+        float targetTemp = doc["targetTemp"] | solar.coTargetTemp;
+        float deltaOn = doc["deltaOn"] | solar.coDeltaOn;
+        float deltaOff = doc["deltaOff"] | solar.coDeltaOff;
+        if (!inRange(maxMixerTemp, 20, 80) || !inRange(targetTemp, 5, 35) || !inRange(deltaOn, 0.1, 20) ||
+            !inRange(deltaOff, 0.1, 20) || !validateSettings(deltaOn, deltaOff, "CO")) {
+            sendJson(422, "{\"status\":\"error\", \"message\":\"Nieprawidłowe nastawy CO\"}");
+            return;
+        }
+
+        solar.coMaxMixerTemp = maxMixerTemp;
+        solar.coTargetTemp = targetTemp;
+        solar.coDeltaOn = deltaOn;
+        solar.coDeltaOff = deltaOff;
         saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        sendJson(200, "{\"status\":\"ok\"}"); });
 
     // Nowy endpoint do sterowania automatyką
     server.on("/api/automation/control", HTTP_POST, []()
               {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
+        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
         JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
 
         const char* system = doc["system"];
-        bool enabled = doc["enabled"];
-
-        if (strcmp(system, "co") == 0) {
-            automationState.autoCoEnabled = enabled;
-        } else if (strcmp(system, "solar") == 0) {
-            automationState.autoSolarEnabled = enabled;
-        } else if (strcmp(system, "wb") == 0) {
-            automationState.autoWbEnabled = enabled;
-        } else if (strcmp(system, "bw") == 0) {
-            automationState.autoBwEnabled = enabled;
-        } else {
-            server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Unknown system\"}");
+        if (system == nullptr || !doc["enabled"].is<bool>()) {
+            sendJson(400, "{\"status\":\"error\",\"message\":\"Brak lub błędny system/enabled\"}");
             return;
         }
 
-        saveSettings();
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        bool enabled = doc["enabled"];
+        bool changed = false;
+
+        if (strcmp(system, "co") == 0) {
+            changed = automationState.autoCoEnabled != enabled;
+            automationState.autoCoEnabled = enabled;
+        } else if (strcmp(system, "solar") == 0) {
+            changed = automationState.autoSolarEnabled != enabled;
+            automationState.autoSolarEnabled = enabled;
+        } else if (strcmp(system, "wb") == 0) {
+            changed = automationState.autoWbEnabled != enabled;
+            automationState.autoWbEnabled = enabled;
+        } else if (strcmp(system, "bw") == 0) {
+            changed = automationState.autoBwEnabled != enabled;
+            automationState.autoBwEnabled = enabled;
+        } else {
+            sendJson(400, "{\"status\":\"error\",\"message\":\"Unknown system\"}");
+            return;
+        }
+
+        if (changed) saveSettings();
+        sendJson(200, "{\"status\":\"ok\"}"); });
 
     server.on("/api/mixer/control", HTTP_POST, []()
               {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
+        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
         JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
 
         if (doc.containsKey("action")) {
             String action = doc["action"];
             if (action == "open") {
                 if (solar.mixerPercent < 100) mixerStep(true);
-                server.send(200, "application/json", "{\"status\":\"ok\", \"message\":\"Mieszacz otwierany\"}");
+                sendJson(200, "{\"status\":\"ok\", \"message\":\"Mieszacz otwierany\"}");
             } else if (action == "close") {
                 if (solar.mixerPercent > 0) mixerStep(false);
-                server.send(200, "application/json", "{\"status\":\"ok\", \"message\":\"Mieszacz zamykany\"}");
+                sendJson(200, "{\"status\":\"ok\", \"message\":\"Mieszacz zamykany\"}");
             } else {
-                server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Nieznana akcja\"}");
+                sendJson(400, "{\"status\":\"error\", \"message\":\"Nieznana akcja\"}");
             }
         } else {
-            server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak klucza 'action'\"}");
-        }
-        server.sendHeader("Access-Control-Allow-Origin", "*"); });
+            sendJson(400, "{\"status\":\"error\", \"message\":\"Brak klucza 'action'\"}");
+        } });
 
     server.on("/api/relay/control", HTTP_POST, []()
               {
-        if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
+        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
         JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { server.send(400, "application/json", "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
 
         if (doc.containsKey("solar_pump")) {
             solar.solarPumpActive = doc["solar_pump"];
+            if (solar.solarPumpActive && !solar.solarTempsOk) {
+                solar.solarPumpActive = false;
+                digitalWrite(RELAY_SOLAR_PUMP, LOW);
+                sendJson(409, "{\"status\":\"error\", \"message\":\"Błąd czujników solarów\"}");
+                return;
+            }
             digitalWrite(RELAY_SOLAR_PUMP, solar.solarPumpActive ? HIGH : LOW);
         }
         if (doc.containsKey("buffer_pump")) {
             solar.bufferPumpActive = doc["buffer_pump"];
+            if (solar.bufferPumpActive && !solar.bufferTempsOk) {
+                solar.bufferPumpActive = false;
+                digitalWrite(RELAY_BUFFER_PUMP, LOW);
+                sendJson(409, "{\"status\":\"error\", \"message\":\"Błąd czujników obiegu bufor-woda\"}");
+                return;
+            }
             digitalWrite(RELAY_BUFFER_PUMP, solar.bufferPumpActive ? HIGH : LOW);
         }
         if (doc.containsKey("valve")) {
             bool ns = doc["valve"];
             // Upewnij się, że nie ma już aktywnego impulsu
             if (solar.valveActionPending) {
-                server.send(409, "application/json", "{\"status\":\"error\", \"message\":\"Impuls zaworu jest już w trakcie\"}");
+                sendJson(409, "{\"status\":\"error\", \"message\":\"Impuls zaworu jest już w trakcie\"}");
                 return;
             }
             if (ns && !solar.valveOpen) {
@@ -868,10 +1073,15 @@ void setupWebServer()
         }
         if (doc.containsKey("co_pump")) {
             solar.coPumpActive = doc["co_pump"];
+            if (solar.coPumpActive && !solar.coTempsOk) {
+                solar.coPumpActive = false;
+                digitalWrite(RELAY_CO_PUMP, LOW);
+                sendJson(409, "{\"status\":\"error\", \"message\":\"Błąd czujników CO\"}");
+                return;
+            }
             digitalWrite(RELAY_CO_PUMP, solar.coPumpActive ? HIGH : LOW);
         }
-        server.sendHeader("Access-Control-Allow-Origin", "*");
-        server.send(200, "application/json", "{\"status\":\"ok\"}"); });
+        sendJson(200, "{\"status\":\"ok\"}"); });
 
     server.begin();
     Serial.println("Server started");

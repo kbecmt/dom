@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "test": "node tests/app.test.js && node tests/firmware-static.test.js"
+  },
+  "devDependencies": {}
+}

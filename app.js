@@ -2,7 +2,33 @@
 // Sterownik Solarny - Aplikacja Webowa
 // =========================================
 
-const API_BASE = "http://192.168.1.170";
+const DEFAULT_API_BASE = "http://192.168.1.170";
+
+function getApiBase(locationObj, storageObj) {
+    const loc = locationObj || (typeof window !== 'undefined' ? window.location : null);
+    const storage = storageObj || (typeof window !== 'undefined' ? window.localStorage : null);
+
+    if (loc) {
+        const params = new URLSearchParams(loc.search || '');
+        const apiFromQuery = params.get('api');
+        if (apiFromQuery) {
+            if (storage) storage.setItem('solarApiBase', apiFromQuery);
+            return apiFromQuery.replace(/\/$/, '');
+        }
+
+        const isHostedUi = /(^|\.)github\.io$/i.test(loc.hostname || '') || (loc.hostname || '') === 'raw.githubusercontent.com';
+        if (!isHostedUi && loc.origin && loc.origin !== 'null') return loc.origin;
+    }
+
+    if (storage) {
+        const saved = storage.getItem('solarApiBase');
+        if (saved) return saved.replace(/\/$/, '');
+    }
+
+    return DEFAULT_API_BASE;
+}
+
+const API_BASE = getApiBase();
 const state = {
     connected: false,
     pollingInterval: null,
@@ -280,8 +306,8 @@ function simulateData() {
         } else if (sim.coMixerPos > sim.coMixerTarget) {
             sim.coMixerPos = Math.max(sim.coMixerTarget, sim.coMixerPos - 34);
         }
-        // Warunek wyłączenia: temp powrotu >= temp zadana LUB bufor góra < temp zadana
-        if (sim.returnTemp >= sim.coTargetTemp || sim.bufferTop < sim.coTargetTemp) {
+        // Warunek wyłączenia zgodny z firmware: dom osiągnął histerezę LUB bufor góra < temp zadana
+        if ((sim.coTargetTemp - sim.houseTemp) <= sim.coDeltaOff || sim.bufferTop < sim.coTargetTemp) {
             sim.coPump = false;
             sim.coPhase = 'stopping';
             sim.coMixerTarget = 0;
@@ -639,8 +665,11 @@ function validateRange(v, min, max, label) {
     if (isNaN(v) || v < min || v > max) { showAlert('⚠️', 'Błąd', `${label} musi być między ${min} a ${max}`); return false; }
     return true;
 }
+function isDeltaValid(on, off) {
+    return Number.isFinite(on) && Number.isFinite(off) && off < on;
+}
 function validateDelta(on, off, label) {
-    if (off >= on) { showAlert('⚠️', 'Błąd', `Delta wyłączenia ${label} musi być mniejsza niż delta włączenia`); return false; }
+    if (!isDeltaValid(on, off)) { showAlert('⚠️', 'Błąd', `Delta wyłączenia ${label} musi być mniejsza niż delta włączenia`); return false; }
     return true;
 }
 
@@ -672,4 +701,13 @@ async function saveBufferSettings() {
         const res = await fetch(`${API_BASE}/api/buffer/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxBufferTemp: maxBT, wodaBuforDeltaOn: wbOn, wodaBuforDeltaOff: wbOff, buforWodaDeltaOn: bwOn, buforWodaDeltaOff: bwOff, minWodaTemp: minWT }) });
         if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia bufora zapisane.'); setTimeout(fetchData, 500);
     } catch (e) { showAlert('❌', 'Błąd', 'Nie można połączyć się z serwerem.'); }
+}
+
+if (typeof module !== 'undefined') {
+    module.exports = {
+        DEFAULT_API_BASE,
+        getApiBase,
+        isDeltaValid,
+        validateDelta
+    };
 }
