@@ -14,6 +14,9 @@
 #define WIFI_PASSWORD "polpolpol1"
 #endif
 
+#define WIFI_RETRY_INTERVAL_MS 30000
+#define WIFI_CONNECT_TIMEOUT_MS 20000
+
 //
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -424,17 +427,12 @@ void loop()
 
     // Nieblokujące sprawdzanie i ponawianie połączenia WiFi
     static unsigned long lastWifiCheck = 0;
-    const unsigned long wifiCheckInterval = 30000; // Sprawdzaj co 30 sekund
-
-    if (millis() - lastWifiCheck >= wifiCheckInterval)
+    if (millis() - lastWifiCheck >= WIFI_RETRY_INTERVAL_MS)
     {
         lastWifiCheck = millis();
         if (WiFi.status() != WL_CONNECTED)
         {
             Serial.println("Rozłączono z WiFi. Próbuję połączyć ponownie...");
-            // Wymuś rozłączenie i ponowne połączenie od zera dla większej niezawodności
-            WiFi.disconnect();
-            delay(500);
             connectToWiFi();
         }
     }
@@ -497,9 +495,36 @@ void checkMixerTimer()
 
 void connectToWiFi()
 {
+    static bool wifiConfigured = false;
+    static bool connectAttempted = false;
+    static unsigned long lastConnectAttempt = 0;
+
+    if (!wifiConfigured)
+    {
+        WiFi.mode(WIFI_STA);
+        WiFi.persistent(false);
+        WiFi.setAutoReconnect(true);
+        wifiConfigured = true;
+    }
+
+    wl_status_t status = WiFi.status();
+    if (status == WL_CONNECTED)
+        return;
+
+    if (connectAttempted && status == WL_IDLE_STATUS && millis() - lastConnectAttempt < WIFI_CONNECT_TIMEOUT_MS)
+    {
+        Serial.println("WiFi: połączenie już trwa, czekam.");
+        return;
+    }
+
+    if (connectAttempted && millis() - lastConnectAttempt < WIFI_RETRY_INTERVAL_MS)
+        return;
+
+    connectAttempted = true;
+    lastConnectAttempt = millis();
     Serial.print("Łączę z WiFi...");
-    WiFi.setAutoReconnect(true);
-    WiFi.persistent(true);
+    WiFi.disconnect(false, false);
+    delay(100);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     Serial.println(" Rozpoczęto próbę połączenia.");
 }
