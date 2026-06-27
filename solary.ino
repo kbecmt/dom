@@ -137,6 +137,9 @@ struct SolarSystem
     String coPhase = "idle";        // idle, starting, running, stopping
     unsigned long coCheckTimer = 0; // timer 30s do sprawdzania temp za mieszaczem
 };
+
+bool isMixerResetting = false;
+unsigned long mixerResetEndTime = 0;
 struct AutomationState
 {
     bool autoCoEnabled = true;
@@ -247,6 +250,22 @@ void setup()
     digitalWrite(LED, LOW);
     digitalWrite(BUZZER, LOW);
 
+    // Rozpocznij resetowanie mieszacza do pozycji 0
+    Serial.println("Rozpoczynam resetowanie pozycji mieszacza CO...");
+    digitalWrite(RELAY_MIXER_CLOSE, HIGH);
+    isMixerResetting = true;
+    // Użyj czasu dłuższego niż pełny cykl, aby mieć pewność
+    mixerResetEndTime = millis() + MIXER_FULL_CLOSE_MS;
+    solar.mixerPercent = 0; // Zakładamy, że po tym będzie na 0
+
+    // Upewnij się, że zawór obiegu jest zamknięty przy starcie
+    Serial.println("Zamykam zawór obiegu bufor-woda...");
+    digitalWrite(RELAY_VALVE_CLOSE, HIGH);
+    solar.valveActionPending = true;
+    solar.valveActionEndTime = millis() + IMPULSE_MS;
+    solar.valveOpen = false;
+    solar.direction = "brak";
+
     sensors.begin();
     // Ustaw tryb nieblokujący dla odczytu temperatur
     sensors.setWaitForConversion(false);
@@ -259,6 +278,23 @@ void setup()
 
 void loop()
 {
+    // Obsługa resetowania mieszacza przy starcie
+    if (isMixerResetting)
+    {
+        digitalWrite(LED, (millis() / 200) % 2); // Szybkie miganie diody
+        if (millis() >= mixerResetEndTime)
+        {
+            digitalWrite(RELAY_MIXER_CLOSE, LOW);
+            isMixerResetting = false;
+            digitalWrite(LED, LOW);
+            Serial.println("Resetowanie mieszacza zakończone. System gotowy.");
+        }
+        // Nie wykonuj reszty pętli podczas resetowania
+        // Ale obsłuż klienta, żeby UI się załadowało
+        server.handleClient();
+        return;
+    }
+
     // Nieblokujące sprawdzanie i ponawianie połączenia WiFi
     static unsigned long lastWifiCheck = 0;
     const unsigned long wifiCheckInterval = 30000; // Sprawdzaj co 30 sekund
@@ -269,7 +305,10 @@ void loop()
         if (WiFi.status() != WL_CONNECTED)
         {
             Serial.println("Rozłączono z WiFi. Próbuję połączyć ponownie...");
-            WiFi.reconnect();
+            // Wymuś rozłączenie i ponowne połączenie od zera dla większej niezawodności
+            WiFi.disconnect();
+            delay(500);
+            connectToWiFi();
         }
     }
     // Zapewnij maksymalną responsywność serwera WWW
@@ -283,7 +322,8 @@ void loop()
     if (millis() - lastUpdate >= updateInterval)
     {
         lastUpdate = millis();
-        if (readTemps()) { // Sprawdź, czy poprzedni odczyt się zakończył i rozpocznij nowy
+        if (readTemps())
+        {                    // Sprawdź, czy poprzedni odczyt się zakończył i rozpocznij nowy
             updateControl(); // Jeśli tak, zaktualizuj logikę
         }
     }
@@ -331,22 +371,10 @@ void checkMixerTimer()
 void connectToWiFi()
 {
     Serial.print("Łączę z WiFi...");
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
     WiFi.begin("ITway.dev", "polpolpol1");
     Serial.println(" Rozpoczęto próbę połączenia.");
-    for (int i = 0; i < 20 && WiFi.status() != WL_CONNECTED; i++)
-    {
-        delay(500);
-        Serial.print(".");
-    }
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        Serial.println("\nIP: " + WiFi.localIP().toString());
-    }
-    else
-    {
-        Serial.println("\n FAIL");
-        WiFi.reconnect();
-    }
 }
 
 // ============= CZUJNIKI =============
@@ -579,7 +607,13 @@ void handleCO()
 
     if (solar.coPhase == "idle")
     {
-        if (automationState.autoCoEnabled && deltaDomu > solar.coDeltaOn && solar.bufferTopTemp > solar.coTargetTemp)
+        // Jeśli system jest w stanie spoczynku, a mieszacz nie jest na pozycji 0, zamknij go.
+        if (solar.mixerPercent > 0 && !solar.mixerRunning)
+        {
+            mixerStep(false); // Zainicjuj krok zamykający
+            Serial.println("=> CO: IDLE, resetuję pozycję mieszacza do zera.");
+        }
+        else if (automationState.autoCoEnabled && deltaDomu > solar.coDeltaOn && solar.bufferTopTemp > solar.coTargetTemp)
         {
             solar.coPhase = "starting";
             if (!solar.mixerRunning && solar.mixerPercent < 100)
@@ -593,20 +627,33 @@ void handleCO()
     {
         if (!solar.mixerRunning)
         {
-            solar.coPumpActive = true;
-            digitalWrite(RELAY_CO_PUMP, HIGH);
-            solar.coPhase = "running";
-            solar.coCheckTimer = millis();
-            Serial.println("=> CO: RUNNING, pompa ON");
+            // Ponownie sprawdź warunki PRZED włączeniem pompy
+            if (automationState.autoCoEnabled && deltaDomu > solar.coDeltaOn && solar.bufferTopTemp > solar.coTargetTemp)
+            {
+                solar.coPumpActive = true;
+                digitalWrite(RELAY_CO_PUMP, HIGH);
+                solar.coPhase = "running";
+                solar.coCheckTimer = millis();
+                Serial.println("=> CO: Warunki OK, włączam pompę. Faza: RUNNING.");
+            }
+            else
+            {
+                // Warunki przestały być spełnione, anuluj start
+                solar.coPhase = "stopping";
+                Serial.println("=> CO: Anulowano start, warunki niespełnione. Zamykam mieszacz.");
+                if (solar.mixerPercent > 0 && !solar.mixerRunning)
+                    mixerStep(false);
+            }
         }
     }
     else if (solar.coPhase == "running")
     {
-        // Sprawdzaj temperaturę za mieszaczem co zdefiniowany interwał
+        // Sprawdzaj temperaturę za mieszaczem co zdefiniowany interwał, ale tylko jeśli warunki pracy są nadal spełnione
         if (!solar.mixerRunning && (millis() - solar.coCheckTimer >= CO_CHECK_INTERVAL_MS))
         {
             solar.coCheckTimer = millis();
-            if (solar.mixerTemp < solar.coMaxMixerTemp && solar.mixerPercent < 100)
+            // Otwieraj mieszacz tylko, gdy jest potrzeba grzania (delta > deltaOff)
+            if (solar.mixerTemp < solar.coMaxMixerTemp && solar.mixerPercent < 100 && deltaDomu > solar.coDeltaOff)
             {
                 mixerStep(true);
                 Serial.printf("=> CO: Korekta - temp. za niska (%.1f°C < %.1f°C), otwieram mieszacz.\n", solar.mixerTemp, solar.coMaxMixerTemp);
