@@ -108,7 +108,7 @@ unsigned long conversionStartTime = 0;
 // Mieszacz: 120s = 100% otwarcia, 130s = 100% zamknięcia
 #define MIXER_FULL_OPEN_MS 120000  // czas pełnego otwarcia mieszacza
 #define MIXER_FULL_CLOSE_MS 130000 //
-#define MIXER_RESET_EXTRA_MS 20000 // zapas przy starcie, gdy pozycja mieszacza jest nieznana
+#define MIXER_START_RESET_MS 120000 // reset mieszacza przy starcie
 #define MIXER_STEP_MS 5000         // czas pojedynczego kroku mieszacza (5s = ~4% otwarcia, ~3.8% zamknięcia)
 #define CO_CHECK_INTERVAL_MS 30000 // Interwał sprawdzania temp. za mieszaczem (30s)
 
@@ -389,8 +389,7 @@ void setup()
     isMixerResetting = true;
     solar.mixerRunning = true;
     solar.mixerDirection = false;
-    // Pełny czas zamknięcia plus zapas, bo po restarcie nie znamy rzeczywistej pozycji.
-    mixerResetEndTime = millis() + MIXER_FULL_CLOSE_MS + MIXER_RESET_EXTRA_MS;
+    mixerResetEndTime = millis() + MIXER_START_RESET_MS;
     solar.mixerStepEnd = mixerResetEndTime;
 
     // Upewnij się, że zawór obiegu jest zamknięty przy starcie
@@ -531,7 +530,7 @@ void connectToWiFi()
 
     if (!wifiConfigured)
     {
-        WiFi.mode(WIFI_STA);
+        //WiFi.mode(WIFI_STA);
         WiFi.persistent(false);
         WiFi.setAutoReconnect(true);
         wifiConfigured = true;
