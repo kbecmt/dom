@@ -15,7 +15,13 @@
 #endif
 
 #define WIFI_RETRY_INTERVAL_MS 30000
-#define WIFI_CONNECT_TIMEOUT_MS 20000
+
+#define WIFI_USE_STATIC_IP true
+IPAddress local_IP(192, 168, 1, 139);
+IPAddress gateway(192, 168, 1, 1);
+IPAddress subnet(255, 255, 255, 0);
+IPAddress primaryDNS(8, 8, 8, 8);
+IPAddress secondaryDNS(1, 1, 1, 1);
 
 //
 const char index_html[] PROGMEM = R"rawliteral(
@@ -45,11 +51,6 @@ const char index_html[] PROGMEM = R"rawliteral(
 </body>
 </html>
 )rawliteral";
-
-// ============= KONFIGURACJA WIFI =============
-// IPAddress local_IP(192, 168, 0, 139);
-// IPAddress gateway(192, 168, 0, 1);
-// IPAddress subnet(255, 255, 255, 0);
 
 // ============= PINY GPIO =============
 #define ONE_WIRE_BUS 32
@@ -525,12 +526,11 @@ void handleWiFi()
 void connectToWiFi()
 {
     static bool wifiConfigured = false;
-    static bool connectAttempted = false;
+    static bool credentialsStarted = false;
     static unsigned long lastConnectAttempt = 0;
 
     if (!wifiConfigured)
     {
-        //WiFi.mode(WIFI_STA);
         WiFi.persistent(false);
         WiFi.setAutoReconnect(true);
         wifiConfigured = true;
@@ -540,25 +540,27 @@ void connectToWiFi()
     if (status == WL_CONNECTED)
         return;
 
-    if (connectAttempted && status == WL_IDLE_STATUS && millis() - lastConnectAttempt < WIFI_CONNECT_TIMEOUT_MS)
-    {
-        Serial.println("WiFi: połączenie już trwa, czekam.");
-        return;
-    }
-
-    if (connectAttempted && millis() - lastConnectAttempt < WIFI_RETRY_INTERVAL_MS)
+    if (credentialsStarted && millis() - lastConnectAttempt < WIFI_RETRY_INTERVAL_MS)
         return;
 
-    connectAttempted = true;
     lastConnectAttempt = millis();
-    Serial.print("Łączę z WiFi...");
-    if (status != WL_IDLE_STATUS)
+
+    if (!credentialsStarted)
     {
-        WiFi.disconnect(false, false);
-        delay(100);
+        credentialsStarted = true;
+        Serial.print("Łączę z WiFi...");
+        if (WIFI_USE_STATIC_IP && !WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
+        {
+            Serial.println(" Nie udało się ustawić stałego IP.");
+        }
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        Serial.println(" Rozpoczęto próbę połączenia.");
+        return;
     }
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    Serial.println(" Rozpoczęto próbę połączenia.");
+
+    Serial.print("Ponawiam WiFi bez zmiany konfiguracji...");
+    WiFi.reconnect();
+    Serial.println(" reconnect().");
 }
 
 // ============= CZUJNIKI =============
