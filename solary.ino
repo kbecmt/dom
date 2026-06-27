@@ -108,6 +108,7 @@ unsigned long conversionStartTime = 0;
 // Mieszacz: 120s = 100% otwarcia, 130s = 100% zamknięcia
 #define MIXER_FULL_OPEN_MS 120000  // czas pełnego otwarcia mieszacza
 #define MIXER_FULL_CLOSE_MS 130000 //
+#define MIXER_RESET_EXTRA_MS 20000 // zapas przy starcie, gdy pozycja mieszacza jest nieznana
 #define MIXER_STEP_MS 5000         // czas pojedynczego kroku mieszacza (5s = ~4% otwarcia, ~3.8% zamknięcia)
 #define CO_CHECK_INTERVAL_MS 30000 // Interwał sprawdzania temp. za mieszaczem (30s)
 
@@ -166,6 +167,7 @@ struct AutomationState
 
 // Forward declarations
 void connectToWiFi();
+void handleWiFi();
 void setupWebServer();
 bool readTemps();
 void updateControl();
@@ -382,11 +384,14 @@ void setup()
 
     // Rozpocznij resetowanie mieszacza do pozycji 0
     Serial.println("Rozpoczynam resetowanie pozycji mieszacza CO...");
+    digitalWrite(RELAY_MIXER_OPEN, LOW);
     digitalWrite(RELAY_MIXER_CLOSE, HIGH);
     isMixerResetting = true;
-    // Użyj czasu dłuższego niż pełny cykl, aby mieć pewność
-    mixerResetEndTime = millis() + MIXER_FULL_CLOSE_MS;
-    solar.mixerPercent = 0; // Zakładamy, że po tym będzie na 0
+    solar.mixerRunning = true;
+    solar.mixerDirection = false;
+    // Pełny czas zamknięcia plus zapas, bo po restarcie nie znamy rzeczywistej pozycji.
+    mixerResetEndTime = millis() + MIXER_FULL_CLOSE_MS + MIXER_RESET_EXTRA_MS;
+    solar.mixerStepEnd = mixerResetEndTime;
 
     // Upewnij się, że zawór obiegu jest zamknięty przy starcie
     Serial.println("Zamykam zawór obiegu bufor-woda...");
@@ -412,30 +417,28 @@ void loop()
     if (isMixerResetting)
     {
         digitalWrite(LED, (millis() / 200) % 2); // Szybkie miganie diody
+        digitalWrite(RELAY_MIXER_OPEN, LOW);
+        digitalWrite(RELAY_MIXER_CLOSE, HIGH);
         if (millis() >= mixerResetEndTime)
         {
+            digitalWrite(RELAY_MIXER_OPEN, LOW);
             digitalWrite(RELAY_MIXER_CLOSE, LOW);
             isMixerResetting = false;
+            solar.mixerRunning = false;
+            solar.mixerDirection = false;
+            solar.mixerPercent = 0;
+            solar.coPhase = "idle";
             digitalWrite(LED, LOW);
             Serial.println("Resetowanie mieszacza zakończone. System gotowy.");
         }
         // Nie wykonuj reszty pętli podczas resetowania
-        // Ale obsłuż klienta, żeby UI się załadowało
+        // Ale obsłuż WiFi i klienta, żeby UI się załadowało.
+        handleWiFi();
         server.handleClient();
         return;
     }
 
-    // Nieblokujące sprawdzanie i ponawianie połączenia WiFi
-    static unsigned long lastWifiCheck = 0;
-    if (millis() - lastWifiCheck >= WIFI_RETRY_INTERVAL_MS)
-    {
-        lastWifiCheck = millis();
-        if (WiFi.status() != WL_CONNECTED)
-        {
-            Serial.println("Rozłączono z WiFi. Próbuję połączyć ponownie...");
-            connectToWiFi();
-        }
-    }
+    handleWiFi();
     // Zapewnij maksymalną responsywność serwera WWW
     server.handleClient();
 
@@ -493,6 +496,33 @@ void checkMixerTimer()
 }
 // ============= WiFi =============
 
+void handleWiFi()
+{
+    static unsigned long lastWifiCheck = 0;
+    static bool wasConnected = false;
+
+    wl_status_t status = WiFi.status();
+    if (status == WL_CONNECTED)
+    {
+        if (!wasConnected)
+        {
+            wasConnected = true;
+            Serial.print("WiFi połączone. IP: ");
+            Serial.println(WiFi.localIP());
+        }
+        return;
+    }
+
+    wasConnected = false;
+
+    if (millis() - lastWifiCheck >= WIFI_RETRY_INTERVAL_MS)
+    {
+        lastWifiCheck = millis();
+        Serial.printf("WiFi status=%d, ponawiam połączenie...\n", status);
+        connectToWiFi();
+    }
+}
+
 void connectToWiFi()
 {
     static bool wifiConfigured = false;
@@ -523,8 +553,11 @@ void connectToWiFi()
     connectAttempted = true;
     lastConnectAttempt = millis();
     Serial.print("Łączę z WiFi...");
-    WiFi.disconnect(false, false);
-    delay(100);
+    if (status != WL_IDLE_STATUS)
+    {
+        WiFi.disconnect(false, false);
+        delay(100);
+    }
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     Serial.println(" Rozpoczęto próbę połączenia.");
 }
@@ -579,6 +612,12 @@ bool readTemps()
 
 void mixerStep(bool open)
 {
+    if (isMixerResetting)
+    {
+        Serial.println("Mieszacz: ignoruję krok, trwa reset do pozycji zamkniętej.");
+        return;
+    }
+
     // Zatrzymaj poprzedni ruch
     digitalWrite(RELAY_MIXER_OPEN, LOW);
     digitalWrite(RELAY_MIXER_CLOSE, LOW);
@@ -1034,6 +1073,7 @@ void setupWebServer()
 
     server.on("/api/mixer/control", HTTP_POST, []()
               {
+        if (isMixerResetting) { sendJson(409, "{\"status\":\"error\", \"message\":\"Trwa reset mieszacza\"}"); return; }
         if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
         JsonDocument doc;
         if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
