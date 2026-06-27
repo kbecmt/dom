@@ -28,7 +28,8 @@ const sim = {
     houseTemp: 18.5, mixerTemp: 22, returnTemp: 18.0, outdoorTemp: 5.0, coPump: false,
     coPhase: 'idle', coMixerPos: 0, coMixerTarget: 0, coActionTicks: 0, coCheckTicks: 0,
     coMaxMixerTemp: 40, coTargetTemp: 20, coDeltaOn: 2, coDeltaOff: 1,
-    targetCollector: 72, time: 0
+    targetCollector: 72, time: 0,
+    autoCoEnabled: true, autoSolarEnabled: true, autoWbEnabled: true, autoBwEnabled: true
 };
 
 // ============= INICJALIZACJA =============
@@ -127,6 +128,20 @@ function setupEventListeners() {
     document.getElementById('btnSaveCoSettings').addEventListener('click', () => {
         showConfirm('Zapisać ustawienia CO?', saveCoSettings);
     });
+
+    // Nowe event listenery dla sterowania automatyką
+    document.getElementById('btnAutoCoOn').addEventListener('click', () => controlAutomation('co', true));
+    document.getElementById('btnAutoCoOff').addEventListener('click', () => controlAutomation('co', false));
+
+    document.getElementById('btnAutoSolarOn').addEventListener('click', () => controlAutomation('solar', true));
+    document.getElementById('btnAutoSolarOff').addEventListener('click', () => controlAutomation('solar', false));
+
+    document.getElementById('btnAutoWbOn').addEventListener('click', () => controlAutomation('wb', true));
+    document.getElementById('btnAutoWbOff').addEventListener('click', () => controlAutomation('wb', false));
+
+    document.getElementById('btnAutoBwOn').addEventListener('click', () => controlAutomation('bw', true));
+    document.getElementById('btnAutoBwOff').addEventListener('click', () => controlAutomation('bw', false));
+
     document.getElementById('alertOkBtn').addEventListener('click', closeAlert);
     document.getElementById('confirmCancelBtn').addEventListener('click', closeConfirm);
     document.getElementById('confirmOkBtn').addEventListener('click', confirmAction);
@@ -173,26 +188,30 @@ function simulateData() {
     sim.bufferTop -= (sim.bufferTop - sim.bufferBottom) * 0.008;
     sim.bufferBottom -= (sim.bufferBottom - 16) * 0.002;
 
-    const dSolar = sim.collector - sim.waterBottom;
-    if (dSolar > sim.solarDeltaOn && sim.waterTop < sim.maxWaterTemp) sim.solarPump = true;
-    else if (dSolar < sim.solarDeltaOff) sim.solarPump = false;
+    if (sim.autoSolarEnabled) {
+        const dSolar = sim.collector - sim.waterBottom;
+        if (dSolar > sim.solarDeltaOn && sim.waterTop < sim.maxWaterTemp) sim.solarPump = true;
+        else if (dSolar < sim.solarDeltaOff) sim.solarPump = false;
+    }
 
-    const dWB = sim.waterTop - sim.bufferBottom;
-    const dBW = sim.bufferTop - sim.waterTop;
-    const wb = (dWB > sim.wodaBuforDeltaOn && sim.waterTop < sim.maxBufferTemp && sim.waterTop > sim.minWodaTemp);
-    const bw = (dBW > sim.buforWodaDeltaOn && sim.waterTop < sim.minWodaTemp);
+    if (sim.autoWbEnabled || sim.autoBwEnabled) {
+        const dWB = sim.waterTop - sim.bufferBottom;
+        const dBW = sim.bufferTop - sim.waterTop;
+        const wb = sim.autoWbEnabled && (dWB > sim.wodaBuforDeltaOn && sim.waterTop < sim.maxBufferTemp && sim.waterTop > sim.minWodaTemp);
+        const bw = sim.autoBwEnabled && (dBW > sim.buforWodaDeltaOn && sim.waterTop < sim.minWodaTemp);
 
-    if (wb && dWB > dBW) {
-        if (!sim.bufferPump || !sim.valveOpen || sim.direction !== 'woda->bufor') {
-            sim.bufferPump = true; sim.valveOpen = true; sim.direction = 'woda->bufor';
+        if (wb && dWB > dBW) {
+            if (!sim.bufferPump || !sim.valveOpen || sim.direction !== 'woda->bufor') {
+                sim.bufferPump = true; sim.valveOpen = true; sim.direction = 'woda->bufor';
+            }
+        } else if (bw) {
+            if (!sim.bufferPump || !sim.valveOpen || sim.direction !== 'bufor->woda') {
+                sim.bufferPump = true; sim.valveOpen = true; sim.direction = 'bufor->woda';
+            }
+        } else if ((sim.direction === 'woda->bufor' && dWB < sim.wodaBuforDeltaOff) ||
+            (sim.direction === 'bufor->woda' && dBW < sim.buforWodaDeltaOff) || (!wb && !bw)) {
+            if (sim.bufferPump || sim.valveOpen) { sim.bufferPump = false; sim.valveOpen = false; sim.direction = 'brak'; }
         }
-    } else if (bw) {
-        if (!sim.bufferPump || !sim.valveOpen || sim.direction !== 'bufor->woda') {
-            sim.bufferPump = true; sim.valveOpen = true; sim.direction = 'bufor->woda';
-        }
-    } else if ((sim.direction === 'woda->bufor' && dWB < sim.wodaBuforDeltaOff) ||
-        (sim.direction === 'bufor->woda' && dBW < sim.buforWodaDeltaOff) || (!wb && !bw)) {
-        if (sim.bufferPump || sim.valveOpen) { sim.bufferPump = false; sim.valveOpen = false; sim.direction = 'brak'; }
     }
 
     // CO symulacja - nowa logika sterowania
@@ -200,7 +219,7 @@ function simulateData() {
     const deltaDomu = sim.coTargetTemp - sim.houseTemp;
 
     if (sim.coPhase === 'idle') {
-        if (deltaDomu > sim.coDeltaOn) {
+        if (sim.autoCoEnabled && deltaDomu > sim.coDeltaOn) {
             // Warunek startu: otwórz mieszacz na 5s, potem włącz pompę
             sim.coPhase = 'starting';
             sim.coMixerTarget = 100;
@@ -290,29 +309,42 @@ function simulateData() {
             maxMixerTemp: sim.coMaxMixerTemp, targetTemp: sim.coTargetTemp,
             deltaOn: sim.coDeltaOn, deltaOff: sim.coDeltaOff,
             pumpActive: sim.coPump, mixerPercent: Math.round(sim.coMixerPos),
-            phase: sim.coPhase, returnTemp: rd(sim.returnTemp)
+            phase: sim.coPhase, returnTemp: rd(sim.returnTemp),
+            autoCoEnabled: sim.autoCoEnabled, autoSolarEnabled: sim.autoSolarEnabled,
+            autoWbEnabled: sim.autoWbEnabled, autoBwEnabled: sim.autoBwEnabled
         },
         outdoorTemp: rd(sim.outdoorTemp)
     });
 }
+
+let googleLogTimer = null;
+const GOOGLE_LOG_INTERVAL = 10 * 60 * 1000; // 10 minut
+
 async function zapisDoGoogleForm(ts, twg, twd) {
   const formUrl =
     "https://docs.google.com/forms/u/0/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse?edit2=2_ABaOnufvPq7jH7-CGeFt-fPJcMIWGR5GMl6RbZReru0Z3I_cx8XzSK9wwCTr_31sxEHpnIM";
 
   const data = new URLSearchParams();
-  data.append("entry.1561554265", ts);  
-  data.append("entry.2118651019", twg);  
-  data.append("entry.607098449", twd);   
+  data.append("entry.1561554265", ts);
+  data.append("entry.2118651019", twg);
+  data.append("entry.607098449", twd);
 
-  await fetch(formUrl, {
-    method: "POST",
-    mode: "no-cors",
-    body: data
-  });
-
+  try {
+    await fetch(formUrl, {
+      method: "POST",
+      mode: "no-cors",
+      body: data
+    });
     state.googleLogged = true;
-    updateLed('googleLoggingStatus', true, 'Wysłano', 'Oczekiwanie');
-  console.log("wykonane");
+    updateLed('googleLoggingStatus', true, 'Wysłano', 'Logowanie...');
+    console.log("Dane wysłane do Google Forms.");
+  } catch (error) {
+    console.error("Błąd podczas wysyłania do Google Forms:", error);
+    updateLed('googleLoggingStatus', false, 'Wysłano', 'Błąd');
+    // Zatrzymujemy dalsze próby w razie błędu sieciowego
+    if (googleLogTimer) clearInterval(googleLogTimer);
+    googleLogTimer = null;
+  }
 }
 // ============= AKTUALIZACJA UI =============
 
@@ -347,8 +379,13 @@ function updateAll(data) {
     }
     Object.keys(diagTemps).forEach(id => setText(id, fmt(diagTemps[id])));
 
-    if (!state.googleLogged && sol.collector && sol.waterTop && sol.waterBottom) {
-        zapisDoGoogleForm(sol.collector, sol.waterTop, sol.waterBottom);
+    // Uruchom cykliczne logowanie do Google, jeśli jeszcze nie jest uruchomione
+    if (!googleLogTimer && sol.collector && sol.waterTop && sol.waterBottom) {
+        const logNow = () => {
+            zapisDoGoogleForm(sol.collector, sol.waterTop, sol.waterBottom);
+        };
+        logNow(); // Wyślij od razu
+        googleLogTimer = setInterval(logNow, GOOGLE_LOG_INTERVAL);
     }
 
     // Delta solarna w zakładce Solary
@@ -425,6 +462,12 @@ function updateAll(data) {
             setVal('coDeltaOff', data.co.deltaOff);
             el.dataset.loaded = 'true';
         }
+
+        // Aktualizacja statusu automatyki
+        updateLed('ctrlAutoCoStatus', data.co.autoCoEnabled, 'Wł', 'Wył');
+        updateLed('ctrlAutoSolarStatus', data.co.autoSolarEnabled, 'Wł', 'Wył');
+        updateLed('ctrlAutoWbStatus', data.co.autoWbEnabled, 'Wł', 'Wył');
+        updateLed('ctrlAutoBwStatus', data.co.autoBwEnabled, 'Wł', 'Wył');
     }
 
     // Ustawienia (pierwsze ładowanie)
@@ -517,6 +560,31 @@ async function controlRelay(relay, enable) {
     } catch (e) { showAlert('❌', 'Błąd', 'Nie udało się sterować urządzeniem.'); }
 }
 
+async function controlAutomation(system, enable) {
+    const names = { 'co': 'Automatyka CO', 'solar': 'Automatyka solarów', 'wb': 'Automatyka W→B', 'bw': 'Automatyka B→W' };
+    const action = enable ? 'włączona' : 'wyłączona';
+
+    if (state.simMode) {
+        if (system === 'co') sim.autoCoEnabled = enable;
+        if (system === 'solar') sim.autoSolarEnabled = enable;
+        if (system === 'wb') sim.autoWbEnabled = enable;
+        if (system === 'bw') sim.autoBwEnabled = enable;
+        showAlert('✅', 'Sukces (sym)', `${names[system] || system} została ${action}.`);
+        // Odśwież UI w symulacji
+        fetchData();
+        return;
+    }
+    try {
+        const payload = { system: system, enabled: enable };
+        const res = await fetch(`${API_BASE}/api/automation/control`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw Error();
+        const r = await res.json();
+        if (r.status === 'ok') { showAlert('✅', 'Sukces', `${names[system] || system} została ${action}.`); setTimeout(fetchData, 500); }
+    } catch (e) { showAlert('❌', 'Błąd', 'Nie udało się sterować automatyką.'); }
+}
+
 // ============= ZAPIS =============
 
 function val(id) { return parseFloat(document.getElementById(id).value); }
@@ -535,26 +603,26 @@ async function saveSolarSettings() {
     if (state.simMode) { sim.maxWaterTemp = maxWT; sim.solarDeltaOn = dOn; sim.solarDeltaOff = dOff; showAlert('✅', 'Zapis (sym)', 'Ustawienia solarów zapisane.'); return; }
     try {
         const res = await fetch(`${API_BASE}/api/solar/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxWaterTemp: maxWT, deltaOn: dOn, deltaOff: dOff }) });
-        if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia solarów zapisane.');
+        if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia solarów zapisane.'); setTimeout(fetchData, 500);
     } catch (e) { showAlert('❌', 'Błąd', 'Nie można połączyć się z serwerem.'); }
 }
 
 async function saveCoSettings() {
     const maxMixer = val('coMaxMixerTemp'), target = val('coTargetTemp'), dOn = val('coDeltaOn'), dOff = val('coDeltaOff');
-    if (!validateRange(maxMixer, 20, 80, 'Max temp. za mieszaczem') || !validateRange(target, 5, 35, 'Temp. zadana w domu') || !validateRange(dOn, 0.5, 20, 'Delta włączenia') || !validateRange(dOff, 0.5, 20, 'Delta wyłączenia') || !validateDelta(dOn, dOff, 'CO')) return;
+    if (!validateRange(maxMixer, 20, 80, 'Max temp. za mieszaczem') || !validateRange(target, 5, 35, 'Temp. zadana w domu') || !validateRange(dOn, 0.1, 20, 'Delta włączenia') || !validateRange(dOff, 0.1, 20, 'Delta wyłączenia') || !validateDelta(dOn, dOff, 'CO')) return;
     if (state.simMode) { sim.coMaxMixerTemp = maxMixer; sim.coTargetTemp = target; sim.coDeltaOn = dOn; sim.coDeltaOff = dOff; showAlert('✅', 'Zapis (sym)', 'Ustawienia CO zapisane.'); return; }
     try {
         const res = await fetch(`${API_BASE}/api/co/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxMixerTemp: maxMixer, targetTemp: target, deltaOn: dOn, deltaOff: dOff }) });
-        if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia CO zapisane.');
+        if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia CO zapisane.'); setTimeout(fetchData, 500);
     } catch (e) { showAlert('❌', 'Błąd', 'Nie można połączyć się z serwerem.'); }
 }
 
 async function saveBufferSettings() {
     const maxBT = val('maxBufferTemp'), wbOn = val('wodaBuforDeltaOn'), wbOff = val('wodaBuforDeltaOff'), bwOn = val('buforWodaDeltaOn'), bwOff = val('buforWodaDeltaOff'), minWT = val('minWodaTemp');
-    if (!validateRange(maxBT, 20, 99, 'Max temp. bufora') || !validateRange(wbOn, 1, 30, 'Delta wł. W→B') || !validateRange(wbOff, 0.5, 20, 'Delta wył. W→B') || !validateDelta(wbOn, wbOff, 'W→B') || !validateRange(bwOn, 1, 30, 'Delta wł. B→W') || !validateRange(bwOff, 0.5, 20, 'Delta wył. B→W') || !validateDelta(bwOn, bwOff, 'B→W') || !validateRange(minWT, 5, 80, 'Min temp. wody')) return;
+    if (!validateRange(maxBT, 20, 99, 'Max temp. bufora') || !validateRange(wbOn, 1, 30, 'Delta wł. W→B') || !validateRange(wbOff, 0.5, 20, 'Delta wył. W→B') || !validateDelta(wbOn, wbOff, 'W→B') || !validateRange(bwOn, 1, 30, 'Delta wł. B→W') || !validateRange(bwOff, 0.5, 20, 'Delta wył. B→W') || !validateDelta(bwOn, bwOff, 'B→W') || !validateRange(minWT, 20, 80, 'Min temp. wody')) return;
     if (state.simMode) { sim.maxBufferTemp = maxBT; sim.wodaBuforDeltaOn = wbOn; sim.wodaBuforDeltaOff = wbOff; sim.buforWodaDeltaOn = bwOn; sim.buforWodaDeltaOff = bwOff; sim.minWodaTemp = minWT; showAlert('✅', 'Zapis (sym)', 'Ustawienia bufora zapisane.'); return; }
     try {
         const res = await fetch(`${API_BASE}/api/buffer/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxBufferTemp: maxBT, wodaBuforDeltaOn: wbOn, wodaBuforDeltaOff: wbOff, buforWodaDeltaOn: bwOn, buforWodaDeltaOff: bwOff, minWodaTemp: minWT }) });
-        if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia bufora zapisane.');
+        if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia bufora zapisane.'); setTimeout(fetchData, 500);
     } catch (e) { showAlert('❌', 'Błąd', 'Nie można połączyć się z serwerem.'); }
 }
