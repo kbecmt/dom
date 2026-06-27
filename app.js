@@ -32,9 +32,8 @@ const sim = {
     autoCoEnabled: true, autoSolarEnabled: true, autoWbEnabled: true, autoBwEnabled: true
 };
 
-// ============= INICJALIZACJA =============
-
-window.initApp = () => {
+// ============/ Poczekaj sekundę przed inicjalizacją, aby upewnić się, że DOM jest gotowy
+function initApp() {
     if (state.initialized) return;
     state.initialized = true;
 
@@ -43,6 +42,8 @@ window.initApp = () => {
     checkConnection();
     startPolling();
 };
+
+
 function setupTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
