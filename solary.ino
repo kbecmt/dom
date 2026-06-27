@@ -23,7 +23,10 @@ const char index_html[] PROGMEM = R"rawliteral(
 <div id="tresc"></div>
 <script>
     fetch("https://raw.githubusercontent.com/kbecmt/dom/refs/heads/main/index.html")
-  .then(response => response.text())
+  .then(response => {
+      if (!response.ok) throw new Error('Network response was not ok');
+      return response.text();
+  })
   .then(html => {
     tresc.innerHTML = html;
     if (typeof initApp === 'function') initApp();
@@ -94,6 +97,7 @@ unsigned long conversionStartTime = 0;
 #define MIXER_FULL_OPEN_MS 120000  // czas pełnego otwarcia mieszacza
 #define MIXER_FULL_CLOSE_MS 130000 //
 #define MIXER_STEP_MS 5000         // czas pojedynczego kroku mieszacza (5s = ~4% otwarcia, ~3.8% zamknięcia)
+#define CO_CHECK_INTERVAL_MS 30000 // Interwał sprawdzania temp. za mieszaczem (30s)
 
 // ============= STRUKTURA =============
 
@@ -253,6 +257,18 @@ void setup()
 
 void loop()
 {
+    // Nieblokujące sprawdzanie i ponawianie połączenia WiFi
+    static unsigned long lastWifiCheck = 0;
+    const unsigned long wifiCheckInterval = 15000; // Sprawdzaj co 15 sekund
+
+    if (millis() - lastWifiCheck >= wifiCheckInterval) {
+        lastWifiCheck = millis();
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("Rozłączono z WiFi. Próbuję połączyć ponownie...");
+            WiFi.reconnect();
+        }
+    }
+
     // Użyj nieblokującego timera do regularnych zadań
     static unsigned long lastRun = 0;
     const unsigned long interval = 2000; // Uruchamiaj logikę co 2 sekundy
@@ -560,18 +576,21 @@ void handleCO() {
             solar.coCheckTimer = millis();
             Serial.println("=> CO: RUNNING, pompa ON");
         }
-    } else if (solar.coPhase == "running") {
-        if (!solar.mixerRunning && (millis() - solar.coCheckTimer >= 5000)) {
+    } else if (solar.coPhase == "running") { // --- Faza pracy ---
+        // Sprawdzaj temperaturę za mieszaczem co zdefiniowany interwał
+        if (!solar.mixerRunning && (millis() - solar.coCheckTimer >= CO_CHECK_INTERVAL_MS)) {
             solar.coCheckTimer = millis();
             if (solar.mixerTemp < solar.coMaxMixerTemp && solar.mixerPercent < 100) {
                 mixerStep(true);
-                Serial.printf("=> CO: mixerTemp %.1f < %.1f → otwórz\n", solar.mixerTemp, solar.coMaxMixerTemp);
+                Serial.printf("=> CO: Korekta - temp. za niska (%.1f°C < %.1f°C), otwieram mieszacz.\n", solar.mixerTemp, solar.coMaxMixerTemp);
             } else if (solar.mixerTemp >= solar.coMaxMixerTemp && solar.mixerPercent > 0) {
                 mixerStep(false);
-                Serial.printf("=> CO: mixerTemp %.1f >= %.1f → zamknij\n", solar.mixerTemp, solar.coMaxMixerTemp);
+                Serial.printf("=> CO: Korekta - temp. za wysoka (%.1f°C >= %.1f°C), zamykam mieszacz.\n", solar.mixerTemp, solar.coMaxMixerTemp);
             }
         }
-        if (solar.returnTemp >= solar.coTargetTemp || solar.bufferTopTemp < solar.coTargetTemp) {
+        // Warunek wyłączenia: temperatura w domu osiągnęła zadaną (z histerezą) LUB brakuje ciepła w buforze
+        bool stopCondition = (solar.coTargetTemp - solar.houseTemp) <= solar.coDeltaOff;
+        if (stopCondition || solar.bufferTopTemp < solar.coTargetTemp) {
             solar.coPumpActive = false;
             digitalWrite(RELAY_CO_PUMP, LOW);
             solar.coPhase = "stopping";

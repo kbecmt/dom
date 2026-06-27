@@ -32,7 +32,7 @@ const sim = {
     autoCoEnabled: true, autoSolarEnabled: true, autoWbEnabled: true, autoBwEnabled: true
 };
 
-// ============/ Poczekaj sekundę przed inicjalizacją, aby upewnić się, że DOM jest gotowy
+// Funkcja wywoływana z HTML po załadowaniu treści
 function initApp() {
     if (state.initialized) return;
     state.initialized = true;
@@ -42,7 +42,6 @@ function initApp() {
     checkConnection();
     startPolling();
 };
-
 
 function setupTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -437,6 +436,13 @@ function updateAll(data) {
         setText('overviewReturnTemp', fmt(data.co.returnTemp));
         setText('ctrlReturnTemp', fmt(data.co.returnTemp));
         setText('coBufferTopTemp', fmt(data.co.bufferTopTemp));
+
+        // Obliczanie i wyświetlanie histerezy CO
+        const turnOnTemp = data.co.targetTemp - data.co.deltaOn;
+        const turnOffTemp = data.co.targetTemp - data.co.deltaOff;
+        setText('coTurnOnTemp', fmt(turnOnTemp));
+        setText('coTurnOffTemp', fmt(turnOffTemp));
+
         updateLed('coPumpStatus', data.co.pumpActive, 'Włączona', 'Wyłączona');
         updateLed('overviewCoPumpStatus', data.co.pumpActive, 'Włączona', 'Wyłączona');
         updateLed('ctrlCoPumpStatus', data.co.pumpActive, 'Wł', 'Wył');
