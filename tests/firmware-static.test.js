@@ -29,6 +29,11 @@ for (const route of [
 }
 
 assert.match(firmware, /HTTP_OPTIONS/);
+assert.match(firmware, /WIFI_USE_STATIC_IP true/);
+assert.match(firmware, /local_IP\(192,\s*168,\s*1,\s*139\)/);
+assert.match(firmware, /raw\.githubusercontent\.com\/kbecmt\/dom/);
+assert.match(firmware, /kbecmt\.github\.io\/dom\/style\.css/);
+assert.match(firmware, /kbecmt\.github\.io\/dom\/app\.js/);
 assert.match(firmware, /Access-Control-Allow-Methods/);
 assert.match(firmware, /Access-Control-Allow-Headers/);
 assert.match(firmware, /Nieprawidłowe nastawy solarów/);
