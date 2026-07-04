@@ -2,7 +2,7 @@
 // Sterownik Solarny - Aplikacja Webowa
 // =========================================
 
-const DEFAULT_API_BASE = "http://192.168.1.170";
+const DEFAULT_API_BASE = "http://192.168.1.139";
 
 function getApiBase(locationObj, storageObj) {
     const loc = locationObj || (typeof window !== 'undefined' ? window.location : null);
