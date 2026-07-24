@@ -927,11 +927,27 @@ void addJsonObjectStart(String &json, const char *key, bool &first)
 String buildGoogleFormSnapshotJson()
 {
     String json;
-    json.reserve(1500);
+    json.reserve(1900);
     bool rootFirst = true;
 
     json += "{";
     addJsonNumber(json, "uptimeMs", (long)millis(), rootFirst);
+
+    addJsonObjectStart(json, "runtime", rootFirst);
+    bool runtimeFirst = true;
+    addJsonNumber(json, "uptimeMs", (long)millis(), runtimeFirst);
+    addJsonNumber(json, "tempState", tempState, runtimeFirst);
+    addJsonNumber(json, "conversionStartTime", (long)conversionStartTime, runtimeFirst);
+    addJsonNumber(json, "googleFormLogIntervalMs", GOOGLE_FORM_LOG_INTERVAL_MS, runtimeFirst);
+    addJsonNumber(json, "lastGoogleFormLog", (long)lastGoogleFormLog, runtimeFirst);
+    addJsonBool(json, "googleFormLogPending", googleFormLogPending, runtimeFirst);
+    addJsonBool(json, "valveActionPending", solar.valveActionPending, runtimeFirst);
+    addJsonNumber(json, "valveActionEndTime", (long)solar.valveActionEndTime, runtimeFirst);
+    addJsonNumber(json, "mixerTimer", (long)solar.mixerTimer, runtimeFirst);
+    addJsonNumber(json, "mixerStepEnd", (long)solar.mixerStepEnd, runtimeFirst);
+    addJsonNumber(json, "mixerResetEndTime", (long)mixerResetEndTime, runtimeFirst);
+    addJsonNumber(json, "coCheckTimer", (long)solar.coCheckTimer, runtimeFirst);
+    json += "}";
 
     addJsonObjectStart(json, "temps", rootFirst);
     bool tempsFirst = true;

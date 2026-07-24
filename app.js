@@ -231,7 +231,8 @@ function buildGoogleCsvProxyUrl(sourceUrl) {
 function getLastDataRow(rows) {
     if (!Array.isArray(rows) || rows.length < 2) return null;
     const dataRows = rows.slice(1).filter(row => row.some(value => String(value || '').trim()));
-    return dataRows[dataRows.length - 1] || null;
+    const completeRows = dataRows.filter(row => hasAllGoogleTemps(snapshotFromGoogleRow(row)));
+    return completeRows[completeRows.length - 1] || dataRows[dataRows.length - 1] || null;
 }
 
 function updateGoogleLastEntry(row) {
@@ -239,13 +240,25 @@ function updateGoogleLastEntry(row) {
     const temps = snapshot.temps || {};
 
     setText('googleLastTime', row[0] || '--');
+    setText('googleLastBufferTop', formatGoogleTemp(temps.bufferTop));
+    setText('googleLastBufferBottom', formatGoogleTemp(temps.bufferBottom));
     setText('googleLastCollector', formatGoogleTemp(temps.collector));
     setText('googleLastWaterTop', formatGoogleTemp(temps.waterTop));
     setText('googleLastWaterBottom', formatGoogleTemp(temps.waterBottom));
+    setText('googleLastHouse', formatGoogleTemp(temps.house));
+    setText('googleLastMixer', formatGoogleTemp(temps.mixer));
+    setText('googleLastReturn', formatGoogleTemp(temps.return));
+    setText('googleLastOutdoor', formatGoogleTemp(temps.outdoor));
     setText('googleLastSummary', row[2] || googleLegacySummary(row));
     setText('googleLastHealth', row[3] || googleLegacyHealth(row));
     setText('googleLastSnapshot', JSON.stringify(snapshot, null, 2));
     renderGoogleAllData(snapshot);
+}
+
+function hasAllGoogleTemps(snapshot) {
+    const temps = snapshot && snapshot.temps ? snapshot.temps : {};
+    return ['bufferTop', 'bufferBottom', 'collector', 'waterTop', 'waterBottom', 'house', 'mixer', 'return', 'outdoor']
+        .every(key => temps[key] !== undefined && temps[key] !== null && temps[key] !== '');
 }
 
 function snapshotFromGoogleRow(row) {
@@ -322,7 +335,9 @@ function renderGoogleAllData(snapshot) {
     if (!container) return;
 
     container.innerHTML = '';
+    const rootValues = Object.fromEntries(Object.entries(snapshot || {}).filter(([, value]) => !value || typeof value !== 'object' || Array.isArray(value)));
     const sections = Object.entries(snapshot || {}).filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value));
+    if (Object.keys(rootValues).length) sections.unshift(['system', rootValues]);
 
     if (!sections.length) {
         const empty = document.createElement('div');
@@ -365,6 +380,8 @@ function renderGoogleAllData(snapshot) {
 function googleSectionLabel(sectionName) {
     const labels = {
         temps: 'Temperatury',
+        runtime: 'Runtime',
+        system: 'System',
         settings: 'Nastawy',
         state: 'Stany wyjść i pracy',
         automation: 'Automatyka',
@@ -417,7 +434,19 @@ function googleFieldLabel(key) {
         coTempsOk: 'Czujniki CO',
         anyTempError: 'Błąd temperatur',
         ip: 'IP',
-        rssi: 'RSSI'
+        rssi: 'RSSI',
+        uptimeMs: 'Uptime',
+        tempState: 'Stan odczytu temperatur',
+        conversionStartTime: 'Start konwersji temperatur',
+        googleFormLogIntervalMs: 'Interwał zapisu Google',
+        lastGoogleFormLog: 'Ostatni zapis Google',
+        googleFormLogPending: 'Zapis Google oczekuje',
+        valveActionPending: 'Impuls zaworu trwa',
+        valveActionEndTime: 'Koniec impulsu zaworu',
+        mixerTimer: 'Timer mieszacza',
+        mixerStepEnd: 'Koniec kroku mieszacza',
+        mixerResetEndTime: 'Koniec resetu mieszacza',
+        coCheckTimer: 'Timer kontroli CO'
     };
     return labels[key] || key;
 }
@@ -925,6 +954,7 @@ if (typeof module !== 'undefined') {
         buildGoogleCsvProxyUrl,
         getLastDataRow,
         snapshotFromGoogleRow,
+        hasAllGoogleTemps,
         googleSnapshotToAppData,
         googleSectionLabel,
         googleFieldLabel,

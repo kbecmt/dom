@@ -29,6 +29,7 @@ assert.match(firmware, /handleGoogleFormLogging\(\);/);
 assert.match(firmware, /buildGoogleFormSnapshotJson\(\)/);
 for (const snapshotMarker of [
   '"temps"',
+  '"runtime"',
   '"settings"',
   '"state"',
   '"automation"',
@@ -38,6 +39,11 @@ for (const snapshotMarker of [
   'solar.collectorTemp',
   'solar.coMaxMixerTemp',
   'solar.mixerPercent',
+  'solar.valveActionPending',
+  'solar.valveActionEndTime',
+  'solar.coCheckTimer',
+  'googleFormLogPending',
+  'GOOGLE_FORM_LOG_INTERVAL_MS',
   'automationState.autoCoEnabled',
   'WiFi.localIP().toString()'
 ]) {

@@ -6,6 +6,7 @@ const {
   buildGoogleCsvProxyUrl,
   getLastDataRow,
   snapshotFromGoogleRow,
+  hasAllGoogleTemps,
   googleSnapshotToAppData,
   googleSectionLabel,
   googleFieldLabel,
@@ -31,10 +32,13 @@ assert.equal(
 const rows = parseCsv([
   'czas,json,podsumowanie,zdrowie',
   '',
-  '2026-07-24,"{""temps"":{""collector"":73.1,""waterTop"":59,""waterBottom"":44.5}}",summary,OK'
+  '2026-07-24,"{""temps"":{""bufferTop"":42,""bufferBottom"":31.5,""collector"":73.1,""waterTop"":59,""waterBottom"":44.5,""house"":21,""mixer"":33,""return"":29,""outdoor"":7}}",summary,OK',
+  '2026-07-24,"{""temps"":{""collector"":74,""waterTop"":60,""waterBottom"":45}}",short,SHORT'
 ].join('\n'));
 assert.deepEqual(getLastDataRow(rows), rows[2]);
 assert.equal(snapshotFromGoogleRow(rows[2]).temps.collector, 73.1);
+assert.equal(hasAllGoogleTemps(snapshotFromGoogleRow(rows[2])), true);
+assert.equal(hasAllGoogleTemps(snapshotFromGoogleRow(rows[3])), false);
 assert.equal(formatGoogleTemp('73,125'), '73.1');
 
 const appData = googleSnapshotToAppData({
@@ -50,7 +54,10 @@ assert.equal(appData.co.targetTemp, 21.5);
 assert.equal(appData.co.autoCoEnabled, false);
 assert.equal(appData.outdoorTemp, 7);
 assert.equal(googleSectionLabel('settings'), 'Nastawy');
+assert.equal(googleSectionLabel('system'), 'System');
+assert.equal(googleSectionLabel('runtime'), 'Runtime');
 assert.equal(googleFieldLabel('coTargetTemp'), 'CO temp. zadana');
+assert.equal(googleFieldLabel('googleFormLogPending'), 'Zapis Google oczekuje');
 assert.equal(formatSnapshotValue(true), 'Tak');
 assert.equal(formatSnapshotValue(21.55), '21.6');
 
