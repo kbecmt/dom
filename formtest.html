@@ -1,29 +1,435 @@
-//http://docs.google.com/forms/u/0/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse
-//entry.1561554265 5
-//entry.2118651019 10
-//entry.607098449 15
-<html>
-    <body>
-        <script>
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Google Forms - solary</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f7fa;
+      color: #172033;
+    }
 
-async function zapisDoGoogleForm(ts, twg, twd) {
-  const formUrl =
-    "http://docs.google.com/forms/u/0/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse";
+    body {
+      margin: 0;
+      padding: 20px;
+    }
 
-  const data = new URLSearchParams();
-  data.append("entry.1561554265", ts);   // pole Meno
-  data.append("entry.2118651019", twg);  // pole Email
-  data.append("entry.607098449", twd);   // pole Číslo
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+    }
 
-  await fetch(formUrl, {
-    method: "POST",
-    mode: "no-cors",
-    body: data
-  });
+    h1 {
+      margin: 0 0 16px;
+      font-size: clamp(1.4rem, 4vw, 2rem);
+    }
 
-  console.log("wykonane");
-}
+    .panel {
+      background: #ffffff;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 24px rgba(23, 32, 51, 0.08);
+    }
 
-zapisDoGoogleForm("1", "2", "3");
-        </script>
-    </html>
+    label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      border: 1px solid #b8c2d3;
+      border-radius: 6px;
+      font: inherit;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 6px;
+      background: #1267d8;
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      margin-left: 8px;
+      background: #42526e;
+    }
+
+    .status {
+      margin-top: 10px;
+      color: #42526e;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+    }
+
+    .tile {
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfe;
+    }
+
+    .label {
+      color: #5d6b82;
+      font-size: 0.88rem;
+    }
+
+    .value {
+      margin-top: 6px;
+      font-size: 1.9rem;
+      font-weight: 800;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 14px 0 0;
+      padding: 12px;
+      border-radius: 8px;
+      background: #eef2f7;
+      font-size: 0.84rem;
+    }
+
+    th, td {
+      padding: 9px;
+      border-bottom: 1px solid #d8dee9;
+      text-align: left;
+    }
+
+    th {
+      color: #42526e;
+      font-weight: 800;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        background: #101722;
+        color: #edf2fb;
+      }
+
+      .panel {
+        background: #172033;
+        border-color: #2b3547;
+      }
+
+      input, .tile {
+        background: #101722;
+        color: #edf2fb;
+        border-color: #38465c;
+      }
+
+      pre {
+        background: #0c111b;
+      }
+
+      .status, .label, th {
+        color: #aab7cc;
+      }
+
+      th, td {
+        border-color: #2b3547;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Test odczytu danych z Google Forms</h1>
+
+    <section class="panel">
+      <label for="csvUrl">Publiczny CSV z arkusza odpowiedzi Google</label>
+      <input id="csvUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv">
+      <button id="loadBtn">Wczytaj dane</button>
+      <button id="demoBtn" class="secondary">Dane testowe</button>
+      <div id="status" class="status">Wklej link CSV opublikowanego arkusza odpowiedzi.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Ostatni wpis</h2>
+      <div class="grid">
+        <div class="tile">
+          <div class="label">Czas</div>
+          <div class="value" id="lastTime">--</div>
+        </div>
+        <div class="tile">
+          <div class="label">Kolektor</div>
+          <div class="value" id="collector">--.-</div>
+        </div>
+        <div class="tile">
+          <div class="label">Woda gora</div>
+          <div class="value" id="waterTop">--.-</div>
+        </div>
+        <div class="tile">
+          <div class="label">Woda dol</div>
+          <div class="value" id="waterBottom">--.-</div>
+        </div>
+      </div>
+      <pre id="snapshotJson">{}</pre>
+    </section>
+
+    <section class="panel">
+      <h2>Ostatnie rekordy</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Czas</th>
+            <th>Podsumowanie</th>
+            <th>Zdrowie</th>
+            <th>JSON</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="4">Brak danych.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'solarGoogleCsvUrl';
+    const DEFAULT_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe/pub?output=csv';
+    const SAMPLE_CSV = [
+      'Sygnatura czasowa,Snapshot JSON,Podsumowanie,Zdrowie',
+      '24.07.2026 12:10:00,"{""temps"":{""collector"":73.1,""waterTop"":59.0,""waterBottom"":44.5},""state"":{""solarPumpActive"":true,""coPumpActive"":false},""health"":{""anyTempError"":false}}","kolektor=73.1, woda_gora=59.0, woda_dol=44.5, solar_pompa=ON, co_pompa=OFF",OK'
+    ].join('\n');
+
+    const csvUrl = document.getElementById('csvUrl');
+    const statusEl = document.getElementById('status');
+    const rowsEl = document.getElementById('rows');
+
+    csvUrl.value = localStorage.getItem(STORAGE_KEY) || DEFAULT_CSV_URL;
+    document.getElementById('loadBtn').addEventListener('click', loadFromGoogleSheet);
+    document.getElementById('demoBtn').addEventListener('click', () => renderCsv(SAMPLE_CSV, 'Wczytano dane testowe.'));
+
+    async function loadFromGoogleSheet() {
+      const url = csvUrl.value.trim();
+      if (!url) {
+        setStatus('Brak linku CSV.', true);
+        return;
+      }
+
+      localStorage.setItem(STORAGE_KEY, url);
+      setStatus('Pobieram dane...');
+
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        renderCsv(await res.text(), 'Dane wczytane z Google Sheets.');
+      } catch (error) {
+        setStatus(`Fetch zablokowany (${error.message}). Probuje proxy CSV...`);
+        try {
+          const csvText = await loadCsvByProxy(url);
+          renderCsv(csvText, 'Dane wczytane przez proxy CSV.');
+        } catch (proxyError) {
+          setStatus(`Proxy CSV nie zadzialal (${proxyError.message}). Probuje JSONP...`);
+          try {
+            const rows = await loadSheetByJsonp(url);
+            renderRows(rows, 'Dane wczytane przez JSONP.');
+          } catch (jsonpError) {
+            setStatus(`Nie udalo sie wczytac danych: ${jsonpError.message}. Otworz link CSV w przegladarce i sprawdz, czy arkusz jest nadal opublikowany.`, true);
+          }
+        }
+      }
+    }
+
+    function renderCsv(csvText, message) {
+      const records = parseCsv(csvText);
+      renderRows(records, message);
+    }
+
+    function renderRows(records, message) {
+      if (records.length < 2) {
+        setStatus('CSV nie ma rekordow odpowiedzi.', true);
+        return;
+      }
+
+      const dataRows = records.slice(1).filter(row => row.some(Boolean));
+      if (!dataRows.length) {
+        setStatus('Arkusz odpowiedzi jest pusty.', true);
+        return;
+      }
+
+      const last = dataRows[dataRows.length - 1];
+      const snapshot = snapshotFromRow(last);
+      document.getElementById('lastTime').textContent = last[0] || '--';
+      document.getElementById('collector').textContent = tempText(snapshot.temps && snapshot.temps.collector);
+      document.getElementById('waterTop').textContent = tempText(snapshot.temps && snapshot.temps.waterTop);
+      document.getElementById('waterBottom').textContent = tempText(snapshot.temps && snapshot.temps.waterBottom);
+      document.getElementById('snapshotJson').textContent = JSON.stringify(snapshot, null, 2);
+
+      rowsEl.innerHTML = '';
+      dataRows.slice(-10).reverse().forEach(row => {
+        const rowSnapshot = snapshotFromRow(row);
+        const tr = document.createElement('tr');
+        [row[0], row[2] || legacySummary(row), row[3] || legacyHealth(row), rowSnapshot.temps ? 'pelny snapshot' : 'stary format'].forEach(value => {
+          const td = document.createElement('td');
+          td.textContent = value || '--';
+          tr.appendChild(td);
+        });
+        rowsEl.appendChild(tr);
+      });
+
+      setStatus(message);
+    }
+
+    async function loadCsvByProxy(sourceUrl) {
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(sourceUrl)}`;
+      const res = await fetch(proxyUrl, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.text();
+    }
+
+    function loadSheetByJsonp(sourceUrl) {
+      const gvizUrl = buildGvizUrl(sourceUrl);
+      if (!gvizUrl) return Promise.reject(new Error('To nie jest opublikowany link Google Sheets.'));
+
+      return new Promise((resolve, reject) => {
+        const callbackName = `googleSheetCallback_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+        const script = document.createElement('script');
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('timeout JSONP'));
+        }, 15000);
+
+        window[callbackName] = response => {
+          cleanup();
+          if (!response || response.status === 'error') {
+            reject(new Error(response && response.errors && response.errors[0] ? response.errors[0].detailed_message : 'blad Google Sheets'));
+            return;
+          }
+          resolve(gvizResponseToRows(response));
+        };
+
+        script.onerror = () => {
+          cleanup();
+          reject(new Error('nie mozna zaladowac skryptu JSONP'));
+        };
+        script.src = `${gvizUrl}${gvizUrl.includes('?') ? '&' : '?'}tqx=responseHandler:${callbackName};out:json`;
+        document.body.appendChild(script);
+
+        function cleanup() {
+          clearTimeout(timeout);
+          delete window[callbackName];
+          if (script.parentNode) script.parentNode.removeChild(script);
+        }
+      });
+    }
+
+    function buildGvizUrl(sourceUrl) {
+      const match = sourceUrl.match(/\/spreadsheets\/d\/e\/([^/]+)/);
+      if (!match) return '';
+
+      const params = new URLSearchParams(sourceUrl.split('?')[1] || '');
+      const gid = params.get('gid');
+      let url = `https://docs.google.com/spreadsheets/d/e/${match[1]}/gviz/tq`;
+      if (gid) url += `?gid=${encodeURIComponent(gid)}`;
+      return url;
+    }
+
+    function gvizResponseToRows(response) {
+      const cols = response.table.cols.map(col => col.label || col.id || '');
+      const rows = response.table.rows.map(row => row.c.map(cell => {
+        if (!cell) return '';
+        return cell.f !== undefined ? cell.f : String(cell.v ?? '');
+      }));
+      return [cols, ...rows];
+    }
+
+    function snapshotFromRow(row) {
+      const raw = row[1] || '';
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (error) {
+        return {
+          temps: {
+            collector: row[1],
+            waterTop: row[2],
+            waterBottom: row[3]
+          },
+          legacy: true
+        };
+      }
+    }
+
+    function legacySummary(row) {
+      return `kolektor=${row[1] || '--'}, woda_gora=${row[2] || '--'}, woda_dol=${row[3] || '--'}`;
+    }
+
+    function legacyHealth(row) {
+      return row.some(Boolean) ? 'stary format' : '';
+    }
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let value = '';
+      let quoted = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"' && quoted && next === '"') {
+          value += '"';
+          i++;
+        } else if (char === '"') {
+          quoted = !quoted;
+        } else if (char === ',' && !quoted) {
+          row.push(value);
+          value = '';
+        } else if ((char === '\n' || char === '\r') && !quoted) {
+          if (char === '\r' && next === '\n') i++;
+          row.push(value);
+          rows.push(row);
+          row = [];
+          value = '';
+        } else {
+          value += char;
+        }
+      }
+
+      if (value || row.length) {
+        row.push(value);
+        rows.push(row);
+      }
+
+      return rows;
+    }
+
+    function tempText(value) {
+      if (value === undefined || value === null || value === '') return '--.-';
+      const normalized = String(value).replace(',', '.');
+      const number = Number.parseFloat(normalized);
+      return Number.isFinite(number) ? `${number.toFixed(1)} C` : value;
+    }
+
+    function setStatus(text, error) {
+      statusEl.textContent = text;
+      statusEl.style.color = error ? '#c0352b' : '';
+    }
+  </script>
+</body>
+</html>

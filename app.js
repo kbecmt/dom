@@ -33,8 +33,7 @@ const state = {
     connected: false,
     pollingInterval: null,
     simMode: false,
-    initialized: false,
-    googleLogged: false
+    initialized: false
 };
 
 // Cache dla elementów DOM, aby nie szukać ich przy każdej aktualizacji
@@ -371,35 +370,6 @@ function simulateData() {
     });
 }
 
-let googleLogTimer = null;
-const GOOGLE_LOG_INTERVAL = 10 * 60 * 1000; // 10 minut
-
-async function zapisDoGoogleForm(ts, twg, twd) {
-  const formUrl =
-    "https://docs.google.com/forms/u/0/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse?edit2=2_ABaOnufvPq7jH7-CGeFt-fPJcMIWGR5GMl6RbZReru0Z3I_cx8XzSK9wwCTr_31sxEHpnIM";
-
-  const data = new URLSearchParams();
-  data.append("entry.1561554265", ts);
-  data.append("entry.2118651019", twg);
-  data.append("entry.607098449", twd);
-
-  try {
-    await fetch(formUrl, {
-      method: "POST",
-      mode: "no-cors",
-      body: data
-    });
-    state.googleLogged = true;
-    updateLed('googleLoggingStatus', true, 'Wysłano', 'Logowanie...');
-    console.log("Dane wysłane do Google Forms.");
-  } catch (error) {
-    console.error("Błąd podczas wysyłania do Google Forms:", error);
-    updateLed('googleLoggingStatus', false, 'Wysłano', 'Błąd');
-    // Zatrzymujemy dalsze próby w razie błędu sieciowego
-    if (googleLogTimer) clearInterval(googleLogTimer);
-    googleLogTimer = null;
-  }
-}
 // ============= AKTUALIZACJA UI =============
 
 function updateAll(data) {
@@ -432,15 +402,6 @@ function updateAll(data) {
         diagTemps['ctrlOutdoorTemp'] = outT;
     }
     Object.keys(diagTemps).forEach(id => setText(id, fmt(diagTemps[id])));
-
-    // Uruchom cykliczne logowanie do Google, jeśli jeszcze nie jest uruchomione
-    if (!googleLogTimer && sol.collector && sol.waterTop && sol.waterBottom) {
-        const logNow = () => {
-            zapisDoGoogleForm(sol.collector, sol.waterTop, sol.waterBottom);
-        };
-        logNow(); // Wyślij od razu
-        googleLogTimer = setInterval(logNow, GOOGLE_LOG_INTERVAL);
-    }
 
     // Delta solarna w zakładce Solary
     const solDelta = (sol.collector && sol.waterBottom)

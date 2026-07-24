@@ -1,8 +1,8 @@
 #include <dummy.h>
 #include <WiFi.h>
-#include <WebServer.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <Preferences.h> // Wymagane dla trwałego przechowywania ustawień
-#include <ArduinoJson.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -24,34 +24,11 @@ IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 IPAddress secondaryDNS(1, 1, 1, 1);
 
-//
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Podole</title>
-<link rel="stylesheet" href="https://kbecmt.github.io/dom/style.css">
-</head>
-<body>
-
-<div id="tresc"></div>
-<script>
-    fetch("https://raw.githubusercontent.com/kbecmt/dom/refs/heads/main/index.html")
-  .then(response => {
-      if (!response.ok) throw new Error('Network response was not ok');
-      return response.text();
-  })
-  .then(html => {
-    tresc.innerHTML = html;
-    if (typeof initApp === 'function') initApp();
-  });
-</script>
-<script src="https://kbecmt.github.io/dom/app.js"></script>
-</body>
-</html>
-)rawliteral";
+#define GOOGLE_FORM_URL "https://docs.google.com/forms/u/0/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse"
+#define GOOGLE_FORM_ENTRY_SNAPSHOT_JSON "entry.1561554265"
+#define GOOGLE_FORM_ENTRY_SUMMARY "entry.2118651019"
+#define GOOGLE_FORM_ENTRY_HEALTH "entry.607098449"
+#define GOOGLE_FORM_LOG_INTERVAL_MS 600000
 
 // ============= PINY GPIO =============
 #define ONE_WIRE_BUS 32
@@ -170,10 +147,15 @@ struct AutomationState
 // Forward declarations
 void connectToWiFi();
 void handleWiFi();
-void setupWebServer();
 bool readTemps();
 void updateControl();
 void checkMixerTimer();
+void handleGoogleFormLogging();
+bool sendTempsToGoogleForm();
+String buildGoogleFormSnapshotJson();
+String buildGoogleFormSummary();
+String buildGoogleFormHealth();
+String urlEncode(const String &value);
 void handleSolarPump();
 void handleBufferCircuit();
 void handleCO();
@@ -182,13 +164,12 @@ void updateTempHealth();
 void stopSolarPump(const char *reason);
 void stopBufferCircuit(const char *reason);
 void stopCO(const char *reason);
-void addCorsHeaders();
-void sendJson(int code, const char *payload);
 bool validateSettings(float on, float off, const char *label);
 
 SolarSystem solar;
 AutomationState automationState;
-WebServer server(80);
+unsigned long lastGoogleFormLog = 0;
+bool googleFormLogPending = true;
 
 // ============= LittleFS =============
 
@@ -343,19 +324,6 @@ void stopCO(const char *reason)
         mixerStep(false);
 }
 
-void addCorsHeaders()
-{
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-}
-
-void sendJson(int code, const char *payload)
-{
-    addCorsHeaders();
-    server.send(code, "application/json", payload);
-}
-
 // ============= SETUP / LOOP =============
 
 void setup()
@@ -408,7 +376,6 @@ void setup()
 
     loadSettings();
     connectToWiFi();
-    setupWebServer();
     Serial.println("Setup OK");
 }
 
@@ -432,16 +399,13 @@ void loop()
             digitalWrite(LED, LOW);
             Serial.println("Resetowanie mieszacza zakończone. System gotowy.");
         }
-        // Nie wykonuj reszty pętli podczas resetowania
-        // Ale obsłuż WiFi i klienta, żeby UI się załadowało.
+        // Nie wykonuj reszty pętli podczas resetowania.
         handleWiFi();
-        server.handleClient();
         return;
     }
 
     handleWiFi();
-    // Zapewnij maksymalną responsywność serwera WWW
-    server.handleClient();
+    handleGoogleFormLogging();
 
     // Użyj nieblokującego timera do regularnych zadań
     static unsigned long lastUpdate = 0;
@@ -454,6 +418,7 @@ void loop()
         if (readTemps())
         {                    // Sprawdź, czy poprzedni odczyt się zakończył i rozpocznij nowy
             updateControl(); // Jeśli tak, zaktualizuj logikę
+            googleFormLogPending = true;
         }
     }
 
@@ -893,269 +858,272 @@ void handleCO()
         }
     }
 }
-// ============= SERWER =============
+// ============= GOOGLE FORMS =============
 
-// Funkcja do obsługi ścieżki głównej, teraz serwująca prostą wiadomość
-void handleRoot()
+void addJsonComma(String &json, bool &first)
 {
-    server.send(200, "text/html", index_html);
+    if (!first)
+        json += ",";
+    first = false;
 }
 
-void setupWebServer()
+void addJsonFloat(String &json, const char *key, float value, bool &first)
 {
-
-    server.on("/", handleRoot);
-    const char *apiPaths[] = {
-        "/api/data",
-        "/api/solar/settings",
-        "/api/buffer/settings",
-        "/api/co/settings",
-        "/api/automation/control",
-        "/api/mixer/control",
-        "/api/relay/control"};
-
-    for (const char *path : apiPaths)
+    addJsonComma(json, first);
+    json += "\"";
+    json += key;
+    json += "\":";
+    if (!isValidTemp(value))
     {
-        server.on(path, HTTP_OPTIONS, []()
-                  {
-            addCorsHeaders();
-            server.send(204, "text/plain", ""); });
+        json += "null";
+        return;
     }
 
-    server.on("/api/data", HTTP_GET, []()
-              {
-        JsonDocument doc;
-        doc["solar"]["collector"] = solar.collectorTemp;
-        doc["solar"]["waterTop"] = solar.waterTopTemp;
-        doc["solar"]["waterBottom"] = solar.waterBottomTemp;
-        doc["solar"]["maxWaterTemp"] = solar.maxWaterTemp;
-        doc["solar"]["deltaOn"] = solar.solarDeltaOn;
-        doc["solar"]["deltaOff"] = solar.solarDeltaOff;
-        doc["solar"]["pumpActive"] = solar.solarPumpActive;
+    json += String(value, 1);
+}
 
-        doc["buffer"]["bufferTop"] = solar.bufferTopTemp;
-        doc["buffer"]["bufferBottom"] = solar.bufferBottomTemp;
-        doc["buffer"]["maxBufferTemp"] = solar.maxBufferTemp;
-        doc["buffer"]["wodaBuforDeltaOn"] = solar.wodaBuforDeltaOn;
-        doc["buffer"]["wodaBuforDeltaOff"] = solar.wodaBuforDeltaOff;
-        doc["buffer"]["buforWodaDeltaOn"] = solar.buforWodaDeltaOn;
-        doc["buffer"]["buforWodaDeltaOff"] = solar.buforWodaDeltaOff;
-        doc["buffer"]["minWodaTemp"] = solar.minWodaTemp;
-        doc["buffer"]["pumpActive"] = solar.bufferPumpActive;
-        doc["buffer"]["valveOpen"] = solar.valveOpen;
-        doc["buffer"]["direction"] = solar.direction;
+void addJsonNumber(String &json, const char *key, long value, bool &first)
+{
+    addJsonComma(json, first);
+    json += "\"";
+    json += key;
+    json += "\":";
+    json += String(value);
+}
 
-        doc["co"]["houseTemp"] = solar.houseTemp;
-        doc["co"]["mixerTemp"] = solar.mixerTemp;
-        doc["co"]["bufferTopTemp"] = solar.bufferTopTemp;
-        doc["co"]["maxMixerTemp"] = solar.coMaxMixerTemp;
-        doc["co"]["targetTemp"] = solar.coTargetTemp;
-        doc["co"]["deltaOn"] = solar.coDeltaOn;
-        doc["co"]["deltaOff"] = solar.coDeltaOff;
-        doc["co"]["pumpActive"] = solar.coPumpActive;
-        doc["co"]["mixerPercent"] = solar.mixerPercent;
-        doc["co"]["phase"] = solar.coPhase;
-        doc["co"]["returnTemp"] = solar.returnTemp;
-        doc["outdoorTemp"] = solar.outdoorTemp;
-        doc["health"]["solarTempsOk"] = solar.solarTempsOk;
-        doc["health"]["bufferTempsOk"] = solar.bufferTempsOk;
-        doc["health"]["coTempsOk"] = solar.coTempsOk;
-        doc["health"]["anyTempError"] = solar.anyTempError;
+void addJsonBool(String &json, const char *key, bool value, bool &first)
+{
+    addJsonComma(json, first);
+    json += "\"";
+    json += key;
+    json += "\":";
+    json += value ? "true" : "false";
+}
 
-        // Dodaj nowe flagi do obiektu CO, aby pasowały do app.js
-        doc["co"]["autoCoEnabled"] = automationState.autoCoEnabled;
-        doc["co"]["autoSolarEnabled"] = automationState.autoSolarEnabled;
-        doc["co"]["autoWbEnabled"] = automationState.autoWbEnabled;
-        doc["co"]["autoBwEnabled"] = automationState.autoBwEnabled;
+void addJsonString(String &json, const char *key, const String &value, bool &first)
+{
+    addJsonComma(json, first);
+    json += "\"";
+    json += key;
+    json += "\":\"";
+    for (unsigned int i = 0; i < value.length(); i++)
+    {
+        char c = value[i];
+        if (c == '"' || c == '\\')
+            json += "\\";
+        json += c;
+    }
+    json += "\"";
+}
 
-        addCorsHeaders();
-        String out; serializeJson(doc, out);
-        server.send(200, "application/json", out); });
+void addJsonObjectStart(String &json, const char *key, bool &first)
+{
+    addJsonComma(json, first);
+    json += "\"";
+    json += key;
+    json += "\":{";
+}
 
-    server.on("/api/solar/settings", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+String buildGoogleFormSnapshotJson()
+{
+    String json;
+    json.reserve(1500);
+    bool rootFirst = true;
 
-        float maxWaterTemp = doc["maxWaterTemp"] | solar.maxWaterTemp;
-        float deltaOn = doc["deltaOn"] | solar.solarDeltaOn;
-        float deltaOff = doc["deltaOff"] | solar.solarDeltaOff;
-        if (!inRange(maxWaterTemp, 20, 99) || !inRange(deltaOn, 1, 30) || !inRange(deltaOff, 0.5, 20) || !validateSettings(deltaOn, deltaOff, "solarów")) {
-            sendJson(422, "{\"status\":\"error\", \"message\":\"Nieprawidłowe nastawy solarów\"}");
-            return;
+    json += "{";
+    addJsonNumber(json, "uptimeMs", (long)millis(), rootFirst);
+
+    addJsonObjectStart(json, "temps", rootFirst);
+    bool tempsFirst = true;
+    addJsonFloat(json, "bufferTop", solar.bufferTopTemp, tempsFirst);
+    addJsonFloat(json, "bufferBottom", solar.bufferBottomTemp, tempsFirst);
+    addJsonFloat(json, "collector", solar.collectorTemp, tempsFirst);
+    addJsonFloat(json, "waterTop", solar.waterTopTemp, tempsFirst);
+    addJsonFloat(json, "waterBottom", solar.waterBottomTemp, tempsFirst);
+    addJsonFloat(json, "house", solar.houseTemp, tempsFirst);
+    addJsonFloat(json, "mixer", solar.mixerTemp, tempsFirst);
+    addJsonFloat(json, "return", solar.returnTemp, tempsFirst);
+    addJsonFloat(json, "outdoor", solar.outdoorTemp, tempsFirst);
+    json += "}";
+
+    addJsonObjectStart(json, "settings", rootFirst);
+    bool settingsFirst = true;
+    addJsonFloat(json, "maxWaterTemp", solar.maxWaterTemp, settingsFirst);
+    addJsonFloat(json, "solarDeltaOn", solar.solarDeltaOn, settingsFirst);
+    addJsonFloat(json, "solarDeltaOff", solar.solarDeltaOff, settingsFirst);
+    addJsonFloat(json, "maxBufferTemp", solar.maxBufferTemp, settingsFirst);
+    addJsonFloat(json, "wodaBuforDeltaOn", solar.wodaBuforDeltaOn, settingsFirst);
+    addJsonFloat(json, "wodaBuforDeltaOff", solar.wodaBuforDeltaOff, settingsFirst);
+    addJsonFloat(json, "buforWodaDeltaOn", solar.buforWodaDeltaOn, settingsFirst);
+    addJsonFloat(json, "buforWodaDeltaOff", solar.buforWodaDeltaOff, settingsFirst);
+    addJsonFloat(json, "minWodaTemp", solar.minWodaTemp, settingsFirst);
+    addJsonFloat(json, "coMaxMixerTemp", solar.coMaxMixerTemp, settingsFirst);
+    addJsonFloat(json, "coTargetTemp", solar.coTargetTemp, settingsFirst);
+    addJsonFloat(json, "coDeltaOn", solar.coDeltaOn, settingsFirst);
+    addJsonFloat(json, "coDeltaOff", solar.coDeltaOff, settingsFirst);
+    json += "}";
+
+    addJsonObjectStart(json, "state", rootFirst);
+    bool stateFirst = true;
+    addJsonBool(json, "solarPumpActive", solar.solarPumpActive, stateFirst);
+    addJsonBool(json, "bufferPumpActive", solar.bufferPumpActive, stateFirst);
+    addJsonBool(json, "valveOpen", solar.valveOpen, stateFirst);
+    addJsonString(json, "direction", solar.direction, stateFirst);
+    addJsonBool(json, "coPumpActive", solar.coPumpActive, stateFirst);
+    addJsonNumber(json, "mixerPercent", solar.mixerPercent, stateFirst);
+    addJsonBool(json, "mixerRunning", solar.mixerRunning, stateFirst);
+    addJsonString(json, "mixerDirection", solar.mixerDirection ? "open" : "close", stateFirst);
+    addJsonString(json, "coPhase", solar.coPhase, stateFirst);
+    addJsonBool(json, "isMixerResetting", isMixerResetting, stateFirst);
+    json += "}";
+
+    addJsonObjectStart(json, "automation", rootFirst);
+    bool automationFirst = true;
+    addJsonBool(json, "autoCoEnabled", automationState.autoCoEnabled, automationFirst);
+    addJsonBool(json, "autoSolarEnabled", automationState.autoSolarEnabled, automationFirst);
+    addJsonBool(json, "autoWbEnabled", automationState.autoWbEnabled, automationFirst);
+    addJsonBool(json, "autoBwEnabled", automationState.autoBwEnabled, automationFirst);
+    json += "}";
+
+    addJsonObjectStart(json, "health", rootFirst);
+    bool healthFirst = true;
+    addJsonBool(json, "solarTempsOk", solar.solarTempsOk, healthFirst);
+    addJsonBool(json, "bufferTempsOk", solar.bufferTempsOk, healthFirst);
+    addJsonBool(json, "coTempsOk", solar.coTempsOk, healthFirst);
+    addJsonBool(json, "anyTempError", solar.anyTempError, healthFirst);
+    json += "}";
+
+    addJsonObjectStart(json, "wifi", rootFirst);
+    bool wifiFirst = true;
+    addJsonString(json, "ip", WiFi.localIP().toString(), wifiFirst);
+    addJsonNumber(json, "rssi", WiFi.RSSI(), wifiFirst);
+    json += "}";
+
+    json += "}";
+    return json;
+}
+
+String buildGoogleFormSummary()
+{
+    String summary;
+    summary.reserve(220);
+    summary += "kolektor=" + String(solar.collectorTemp, 1);
+    summary += ", woda_gora=" + String(solar.waterTopTemp, 1);
+    summary += ", woda_dol=" + String(solar.waterBottomTemp, 1);
+    summary += ", bufor_gora=" + String(solar.bufferTopTemp, 1);
+    summary += ", dom=" + String(solar.houseTemp, 1);
+    summary += ", solar_pompa=" + String(solar.solarPumpActive ? "ON" : "OFF");
+    summary += ", co_pompa=" + String(solar.coPumpActive ? "ON" : "OFF");
+    return summary;
+}
+
+String buildGoogleFormHealth()
+{
+    if (!solar.anyTempError)
+        return "OK";
+
+    String health;
+    health.reserve(80);
+    health += solar.solarTempsOk ? "solar_ok" : "solar_error";
+    health += ",";
+    health += solar.bufferTempsOk ? "buffer_ok" : "buffer_error";
+    health += ",";
+    health += solar.coTempsOk ? "co_ok" : "co_error";
+    return health;
+}
+
+String urlEncode(const String &value)
+{
+    const char *hex = "0123456789ABCDEF";
+    String encoded;
+    encoded.reserve(value.length() * 3);
+
+    for (unsigned int i = 0; i < value.length(); i++)
+    {
+        unsigned char c = (unsigned char)value[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~')
+        {
+            encoded += (char)c;
         }
-
-        solar.maxWaterTemp = maxWaterTemp;
-        solar.solarDeltaOn = deltaOn;
-        solar.solarDeltaOff = deltaOff;
-        saveSettings();
-        sendJson(200, "{\"status\":\"ok\"}"); });
-
-    server.on("/api/buffer/settings", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
-
-        float maxBufferTemp = doc["maxBufferTemp"] | solar.maxBufferTemp;
-        float wodaBuforDeltaOn = doc["wodaBuforDeltaOn"] | solar.wodaBuforDeltaOn;
-        float wodaBuforDeltaOff = doc["wodaBuforDeltaOff"] | solar.wodaBuforDeltaOff;
-        float buforWodaDeltaOn = doc["buforWodaDeltaOn"] | solar.buforWodaDeltaOn;
-        float buforWodaDeltaOff = doc["buforWodaDeltaOff"] | solar.buforWodaDeltaOff;
-        float minWodaTemp = doc["minWodaTemp"] | solar.minWodaTemp;
-        if (!inRange(maxBufferTemp, 20, 99) || !inRange(wodaBuforDeltaOn, 1, 30) || !inRange(wodaBuforDeltaOff, 0.5, 20) ||
-            !inRange(buforWodaDeltaOn, 1, 30) || !inRange(buforWodaDeltaOff, 0.5, 20) || !inRange(minWodaTemp, 20, 80) ||
-            !validateSettings(wodaBuforDeltaOn, wodaBuforDeltaOff, "W-B") || !validateSettings(buforWodaDeltaOn, buforWodaDeltaOff, "B-W")) {
-            sendJson(422, "{\"status\":\"error\", \"message\":\"Nieprawidłowe nastawy bufora\"}");
-            return;
+        else if (c == ' ')
+        {
+            encoded += '+';
         }
-
-        solar.maxBufferTemp = maxBufferTemp;
-        solar.wodaBuforDeltaOn = wodaBuforDeltaOn;
-        solar.wodaBuforDeltaOff = wodaBuforDeltaOff;
-        solar.buforWodaDeltaOn = buforWodaDeltaOn;
-        solar.buforWodaDeltaOff = buforWodaDeltaOff;
-        solar.minWodaTemp = minWodaTemp;
-        saveSettings();
-        sendJson(200, "{\"status\":\"ok\"}"); });
-
-    server.on("/api/co/settings", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
-
-        float maxMixerTemp = doc["maxMixerTemp"] | solar.coMaxMixerTemp;
-        float targetTemp = doc["targetTemp"] | solar.coTargetTemp;
-        float deltaOn = doc["deltaOn"] | solar.coDeltaOn;
-        float deltaOff = doc["deltaOff"] | solar.coDeltaOff;
-        if (!inRange(maxMixerTemp, 20, 80) || !inRange(targetTemp, 5, 35) || !inRange(deltaOn, 0.1, 20) ||
-            !inRange(deltaOff, 0.1, 20) || !validateSettings(deltaOn, deltaOff, "CO")) {
-            sendJson(422, "{\"status\":\"error\", \"message\":\"Nieprawidłowe nastawy CO\"}");
-            return;
+        else
+        {
+            encoded += '%';
+            encoded += hex[c >> 4];
+            encoded += hex[c & 0x0F];
         }
+    }
 
-        solar.coMaxMixerTemp = maxMixerTemp;
-        solar.coTargetTemp = targetTemp;
-        solar.coDeltaOn = deltaOn;
-        solar.coDeltaOff = deltaOff;
-        saveSettings();
-        sendJson(200, "{\"status\":\"ok\"}"); });
+    return encoded;
+}
 
-    // Nowy endpoint do sterowania automatyką
-    server.on("/api/automation/control", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+void handleGoogleFormLogging()
+{
+    if (WiFi.status() != WL_CONNECTED)
+        return;
 
-        const char* system = doc["system"];
-        if (system == nullptr || !doc["enabled"].is<bool>()) {
-            sendJson(400, "{\"status\":\"error\",\"message\":\"Brak lub błędny system/enabled\"}");
-            return;
-        }
+    unsigned long now = millis();
+    if (!googleFormLogPending && now - lastGoogleFormLog < GOOGLE_FORM_LOG_INTERVAL_MS)
+        return;
 
-        bool enabled = doc["enabled"];
-        bool changed = false;
+    if (!solar.solarTempsOk)
+    {
+        Serial.println("Google Forms: pomijam zapis, błędne temperatury solarów.");
+        googleFormLogPending = false;
+        lastGoogleFormLog = now;
+        return;
+    }
 
-        if (strcmp(system, "co") == 0) {
-            changed = automationState.autoCoEnabled != enabled;
-            automationState.autoCoEnabled = enabled;
-        } else if (strcmp(system, "solar") == 0) {
-            changed = automationState.autoSolarEnabled != enabled;
-            automationState.autoSolarEnabled = enabled;
-        } else if (strcmp(system, "wb") == 0) {
-            changed = automationState.autoWbEnabled != enabled;
-            automationState.autoWbEnabled = enabled;
-        } else if (strcmp(system, "bw") == 0) {
-            changed = automationState.autoBwEnabled != enabled;
-            automationState.autoBwEnabled = enabled;
-        } else {
-            sendJson(400, "{\"status\":\"error\",\"message\":\"Unknown system\"}");
-            return;
-        }
+    if (sendTempsToGoogleForm())
+    {
+        googleFormLogPending = false;
+        lastGoogleFormLog = now;
+    }
+}
 
-        if (changed) saveSettings();
-        sendJson(200, "{\"status\":\"ok\"}"); });
+bool sendTempsToGoogleForm()
+{
+    WiFiClientSecure client;
+    HTTPClient http;
+    client.setInsecure();
 
-    server.on("/api/mixer/control", HTTP_POST, []()
-              {
-        if (isMixerResetting) { sendJson(409, "{\"status\":\"error\", \"message\":\"Trwa reset mieszacza\"}"); return; }
-        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+    if (!http.begin(client, GOOGLE_FORM_URL))
+    {
+        Serial.println("Google Forms: nie można rozpocząć połączenia.");
+        return false;
+    }
 
-        if (doc.containsKey("action")) {
-            String action = doc["action"];
-            if (action == "open") {
-                if (solar.mixerPercent < 100) mixerStep(true);
-                sendJson(200, "{\"status\":\"ok\", \"message\":\"Mieszacz otwierany\"}");
-            } else if (action == "close") {
-                if (solar.mixerPercent > 0) mixerStep(false);
-                sendJson(200, "{\"status\":\"ok\", \"message\":\"Mieszacz zamykany\"}");
-            } else {
-                sendJson(400, "{\"status\":\"error\", \"message\":\"Nieznana akcja\"}");
-            }
-        } else {
-            sendJson(400, "{\"status\":\"error\", \"message\":\"Brak klucza 'action'\"}");
-        } });
+    String snapshot = buildGoogleFormSnapshotJson();
+    String summary = buildGoogleFormSummary();
+    String health = buildGoogleFormHealth();
 
-    server.on("/api/relay/control", HTTP_POST, []()
-              {
-        if (!server.hasArg("plain")) { sendJson(400, "{\"status\":\"error\", \"message\":\"Brak danych\"}"); return; }
-        JsonDocument doc;
-        if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) { sendJson(400, "{\"status\":\"error\", \"message\":\"Błąd deserializacji JSON\"}"); return; }
+    String body;
+    body.reserve(snapshot.length() * 3 + summary.length() * 3 + 96);
+    body += GOOGLE_FORM_ENTRY_SNAPSHOT_JSON;
+    body += "=";
+    body += urlEncode(snapshot);
+    body += "&";
+    body += GOOGLE_FORM_ENTRY_SUMMARY;
+    body += "=";
+    body += urlEncode(summary);
+    body += "&";
+    body += GOOGLE_FORM_ENTRY_HEALTH;
+    body += "=";
+    body += urlEncode(health);
 
-        if (doc.containsKey("solar_pump")) {
-            solar.solarPumpActive = doc["solar_pump"];
-            if (solar.solarPumpActive && !solar.solarTempsOk) {
-                solar.solarPumpActive = false;
-                digitalWrite(RELAY_SOLAR_PUMP, LOW);
-                sendJson(409, "{\"status\":\"error\", \"message\":\"Błąd czujników solarów\"}");
-                return;
-            }
-            digitalWrite(RELAY_SOLAR_PUMP, solar.solarPumpActive ? HIGH : LOW);
-        }
-        if (doc.containsKey("buffer_pump")) {
-            solar.bufferPumpActive = doc["buffer_pump"];
-            if (solar.bufferPumpActive && !solar.bufferTempsOk) {
-                solar.bufferPumpActive = false;
-                digitalWrite(RELAY_BUFFER_PUMP, LOW);
-                sendJson(409, "{\"status\":\"error\", \"message\":\"Błąd czujników obiegu bufor-woda\"}");
-                return;
-            }
-            digitalWrite(RELAY_BUFFER_PUMP, solar.bufferPumpActive ? HIGH : LOW);
-        }
-        if (doc.containsKey("valve")) {
-            bool ns = doc["valve"];
-            // Upewnij się, że nie ma już aktywnego impulsu
-            if (solar.valveActionPending) {
-                sendJson(409, "{\"status\":\"error\", \"message\":\"Impuls zaworu jest już w trakcie\"}");
-                return;
-            }
-            if (ns && !solar.valveOpen) {
-                digitalWrite(RELAY_VALVE_OPEN, HIGH);
-                solar.valveActionEndTime = millis() + IMPULSE_MS; solar.valveActionPending = true;
-            } else if (!ns && solar.valveOpen) {
-                digitalWrite(RELAY_VALVE_CLOSE, HIGH);
-                solar.valveActionEndTime = millis() + IMPULSE_MS; solar.valveActionPending = true;
-            }
-            solar.valveOpen = ns;
-            if (!solar.valveOpen) solar.direction = "brak";
-        }
-        if (doc.containsKey("co_pump")) {
-            solar.coPumpActive = doc["co_pump"];
-            if (solar.coPumpActive && !solar.coTempsOk) {
-                solar.coPumpActive = false;
-                digitalWrite(RELAY_CO_PUMP, LOW);
-                sendJson(409, "{\"status\":\"error\", \"message\":\"Błąd czujników CO\"}");
-                return;
-            }
-            digitalWrite(RELAY_CO_PUMP, solar.coPumpActive ? HIGH : LOW);
-        }
-        sendJson(200, "{\"status\":\"ok\"}"); });
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    int code = http.POST(body);
+    http.end();
 
-    server.begin();
-    Serial.println("Server started");
+    if (code > 0 && code < 400)
+    {
+        Serial.printf("Google Forms: zapis OK (HTTP %d)\n", code);
+        return true;
+    }
+
+    Serial.printf("Google Forms: błąd zapisu (HTTP %d)\n", code);
+    return false;
 }

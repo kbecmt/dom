@@ -777,13 +777,13 @@
             <div id="tab-internet" class="tab-content">
                 <section class="card">
                     <h2>🌐 Logowanie do Arkuszy Google</h2>
-                    <p class="desc">Status wysyłania parametrów pomiarowych do zewnętrznego arkusza kalkulacyjnego przez Google Forms.</p>
+                    <p class="desc">ESP32 wysyła pełny snapshot parametrów bezpośrednio do Google Forms. Odczyt ostatnich wpisów sprawdzisz w pliku formtest.html po wklejeniu publicznego linku CSV z arkusza odpowiedzi.</p>
                     <div class="status-grid">
                         <div class="status-item">
-                            <span class="status-label">Status wysyłki danych</span>
-                            <span class="status-indicator" id="googleLoggingStatus">
-                                <span class="led led-off"></span>
-                                <span class="led-text">Oczekiwanie</span>
+                            <span class="status-label">Tryb wysyłki danych</span>
+                            <span class="status-indicator">
+                                <span class="led led-on"></span>
+                                <span class="led-text">Firmware</span>
                             </span>
                         </div>
                     </div>
