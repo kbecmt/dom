@@ -25,7 +25,7 @@ IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 IPAddress secondaryDNS(1, 1, 1, 1);
 
-#define GOOGLE_WEB_APP_URL "https://script.google.com/macros/s/AKfycbwnXUly2oKjJfwnhEGTOTIil9v9TtrM6m93VhLxWVTaVIdmA-iGwgYXDKYZm6A56Uc3/exec"
+#define GOOGLE_WEB_APP_URL "https://script.google.com/macros/s/AKfycbwTJzaqg-AXMZRT2Lg0w12xt_CbV5igs6v9mejUmPGeTf_viHZqkMe1hbjJ4Ea-BtID/exec"
 #define GOOGLE_DATA_URL GOOGLE_WEB_APP_URL
 #define GOOGLE_FORM_LOG_INTERVAL_MS 30000
 #define GOOGLE_SETTINGS_URL GOOGLE_WEB_APP_URL "?type=settings"
