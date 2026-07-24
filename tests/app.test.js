@@ -3,8 +3,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   DEFAULT_GOOGLE_CSV_URL,
+  GOOGLE_SETTINGS_WEB_APP_URL,
+  GOOGLE_DATA_WEB_APP_URL,
   GOOGLE_DATA_POLL_INTERVAL_MS,
   buildGoogleCsvProxyUrl,
+  fetchGoogleJsonp,
   getLastDataRow,
   snapshotFromGoogleRow,
   hasAllGoogleTemps,
@@ -28,6 +31,8 @@ assert.equal(isDeltaValid(3, 4), false);
 assert.equal(isDeltaValid(Number.NaN, 1), false);
 
 assert.match(DEFAULT_GOOGLE_CSV_URL, /2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe\/pub\?output=csv/);
+assert.match(GOOGLE_SETTINGS_WEB_APP_URL, /script\.google\.com\/macros\/s\/[^/]+\/exec/);
+assert.equal(GOOGLE_DATA_WEB_APP_URL, `${GOOGLE_SETTINGS_WEB_APP_URL}?type=data`);
 assert.equal(GOOGLE_DATA_POLL_INTERVAL_MS, 30000);
 assert.equal(
   buildGoogleCsvProxyUrl('https://example.com/a?b=1'),
@@ -117,6 +122,13 @@ assert.doesNotMatch(appSource, /fetch\(`\$\{API_BASE\}\/api\//);
 assert.doesNotMatch(appSource, /\/api\/data/);
 assert.match(appSource, /function renderGoogleAllData\(snapshot\)/);
 assert.match(appSource, /GOOGLE_SETTINGS_WEB_APP_URL/);
+assert.match(appSource, /GOOGLE_DATA_WEB_APP_URL/);
+assert.match(appSource, /function fetchGoogleCurrentData\(\)/);
+assert.match(appSource, /function fetchGoogleJsonp\(sourceUrl/);
+assert.match(appSource, /callback=/);
+assert.match(appSource, /falling back to CSV/);
 assert.match(appSource, /function sendSettingsToGoogle\(scope, settings\)/);
+
+assert.equal(typeof fetchGoogleJsonp, 'function');
 
 console.log('app tests ok');

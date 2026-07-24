@@ -1301,6 +1301,7 @@ bool sendTempsToGoogleForm()
         Serial.println("Google Data: nie można rozpocząć połączenia.");
         return false;
     }
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
     String snapshot = buildGoogleFormSnapshotJson();
     String summary = buildGoogleFormSummary();
@@ -1370,6 +1371,7 @@ bool fetchSettingsFromGoogle()
         Serial.println("Google Settings: nie można rozpocząć połączenia.");
         return false;
     }
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
     int code = http.GET();
     if (code <= 0 || code >= 400)

@@ -114,6 +114,7 @@ for (const appTempKey of [
 assert.match(firmware, /urlEncode\(snapshot\)/);
 assert.match(firmware, /type=data&snapshot=/);
 assert.match(firmware, /http\.POST\(body\)/);
+assert.match(firmware, /http\.setFollowRedirects\(HTTPC_STRICT_FOLLOW_REDIRECTS\)/);
 assert.match(firmware, /Google Data: POST %s/);
 assert.match(firmware, /snapshot=%uB, summary=%uB, health=%uB/);
 assert.match(firmware, /Google Data: WiFi RSSI=%d dBm, IP=%s/);

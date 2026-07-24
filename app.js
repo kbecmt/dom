@@ -4,6 +4,7 @@
 
 const DEFAULT_GOOGLE_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe/pub?output=csv";
 const GOOGLE_SETTINGS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzr6hSFnbyXZHB9idDSpMVYkce5BbTTWmqH8xREav1L3kqLUJag5OGRBxfwZbSY-wJO/exec";
+const GOOGLE_DATA_WEB_APP_URL = `${GOOGLE_SETTINGS_WEB_APP_URL}?type=data`;
 const GOOGLE_DATA_POLL_INTERVAL_MS = 30000;
 
 const state = {
@@ -216,11 +217,64 @@ async function fetchData() {
 }
 
 async function loadGoogleFormLastEntry() {
+    try {
+        const current = await fetchGoogleCurrentData();
+        if (current && current.snapshot && typeof current.snapshot === 'object') {
+            return [JSON.stringify(current)];
+        }
+    } catch (error) {
+        console.warn('Google Web App data failed, falling back to CSV:', error);
+    }
+
     const csvText = await fetchGoogleCsv(DEFAULT_GOOGLE_CSV_URL);
     const rows = parseCsv(csvText);
     const lastRow = getLastDataRow(rows);
     if (!lastRow) throw new Error('brak wpisów w arkuszu');
     return lastRow;
+}
+
+async function fetchGoogleCurrentData() {
+    if (!GOOGLE_DATA_WEB_APP_URL) throw new Error('brak adresu Google Web App');
+    const data = await fetchGoogleJsonp(GOOGLE_DATA_WEB_APP_URL);
+    if (!data || data.ok === false) {
+        throw new Error((data && data.message) || 'brak aktualnego stanu w Google Web App');
+    }
+    return data;
+}
+
+function fetchGoogleJsonp(sourceUrl, timeoutMs = 10000) {
+    if (typeof document === 'undefined') {
+        return Promise.reject(new Error('JSONP działa tylko w przeglądarce'));
+    }
+
+    return new Promise((resolve, reject) => {
+        const callbackName = `solaryGoogleCallback_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+        const script = document.createElement('script');
+        const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error('nie można załadować danych JSONP z Google Web App'));
+        }, timeoutMs);
+
+        function cleanup() {
+            clearTimeout(timeout);
+            if (script.parentNode) script.parentNode.removeChild(script);
+            try { delete window[callbackName]; } catch (error) { window[callbackName] = undefined; }
+        }
+
+        window[callbackName] = data => {
+            cleanup();
+            resolve(data);
+        };
+
+        script.onerror = () => {
+            cleanup();
+            reject(new Error('nie można załadować skryptu JSONP z Google Web App'));
+        };
+
+        const separator = sourceUrl.includes('?') ? '&' : '?';
+        script.src = `${sourceUrl}${separator}callback=${encodeURIComponent(callbackName)}&_=${Date.now()}`;
+        document.head.appendChild(script);
+    });
 }
 
 async function fetchGoogleCsv(sourceUrl) {
@@ -1090,8 +1144,12 @@ async function saveBufferSettings() {
 if (typeof module !== 'undefined') {
     module.exports = {
         DEFAULT_GOOGLE_CSV_URL,
+        GOOGLE_SETTINGS_WEB_APP_URL,
+        GOOGLE_DATA_WEB_APP_URL,
         GOOGLE_DATA_POLL_INTERVAL_MS,
         buildGoogleCsvProxyUrl,
+        fetchGoogleCurrentData,
+        fetchGoogleJsonp,
         getLastDataRow,
         snapshotFromGoogleRow,
         hasAllGoogleTemps,
