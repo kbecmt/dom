@@ -480,6 +480,11 @@ void handleWiFi()
             Serial.print("WiFi RSSI: ");
             Serial.println(WiFi.RSSI());
         }
+        if (millis() - lastWifiCheck >= WIFI_STATUS_LOG_INTERVAL_MS)
+        {
+            lastWifiCheck = millis();
+            Serial.printf("WiFi OK: IP=%s, RSSI=%d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        }
         return;
     }
 
@@ -1151,6 +1156,8 @@ bool sendTempsToGoogleForm()
     Serial.printf("Google Data: POST %s\n", GOOGLE_DATA_URL);
     Serial.printf("Google Data: snapshot=%uB, summary=%uB, health=%uB\n",
                   snapshot.length(), summary.length(), health.length());
+    Serial.printf("Google Data: WiFi RSSI=%d dBm, IP=%s\n",
+                  WiFi.RSSI(), WiFi.localIP().toString().c_str());
     Serial.printf("Google Data: temp kolektor=%.1f, woda_gora=%.1f, bufor_gora=%.1f, dom=%.1f\n",
                   solar.collectorTemp, solar.waterTopTemp, solar.bufferTopTemp, solar.houseTemp);
 
