@@ -307,8 +307,8 @@ function updateGoogleLastEntry(row) {
     const record = googleCurrentDataRecordFromRow(row);
     const timestamp = googleRowTimestamp(row);
 
-    setText('googleLastTime', timestamp || '--');
     state.lastGoogleEntryDate = parseGoogleTimestamp(timestamp);
+    setText('googleLastTime', formatGoogleTimestamp(timestamp));
     updateLastEntryAgeTop();
     setText('googleLastBufferTop', formatGoogleTemp(temps.bufferTop));
     setText('googleLastBufferBottom', formatGoogleTemp(temps.bufferBottom));
@@ -344,6 +344,12 @@ function googleRowTimestamp(row) {
 function parseGoogleTimestamp(value) {
     if (!value) return null;
     const text = String(value).trim();
+
+    if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(text)) {
+        const parsedWithZone = new Date(text);
+        return Number.isNaN(parsedWithZone.getTime()) ? null : parsedWithZone;
+    }
+
     const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
     if (match) {
         const [, year, month, day, hour, minute, second = '0'] = match;
@@ -352,6 +358,20 @@ function parseGoogleTimestamp(value) {
     }
     const parsed = new Date(text);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatGoogleTimestamp(value) {
+    const date = parseGoogleTimestamp(value);
+    if (!date) return value || '--';
+    return new Intl.DateTimeFormat('pl-PL', {
+        timeZone: 'Europe/Warsaw',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    }).format(date);
 }
 
 function formatElapsedSince(date, now = new Date()) {
@@ -1187,6 +1207,7 @@ if (typeof module !== 'undefined') {
         formatGoogleTemp,
         parseCsv,
         parseGoogleTimestamp,
+        formatGoogleTimestamp,
         formatElapsedSince,
         buildSettingsPayload,
         isDeltaValid,

@@ -19,6 +19,7 @@ const {
   formatGoogleTemp,
   parseCsv,
   parseGoogleTimestamp,
+  formatGoogleTimestamp,
   formatElapsedSince,
   buildSettingsPayload,
   isDeltaValid
@@ -79,6 +80,8 @@ assert.equal(googleFieldLabel('googleFormLogPending'), 'Zapis Google oczekuje');
 assert.equal(formatSnapshotValue(true), 'Tak');
 assert.equal(formatSnapshotValue(21.55), '21.6');
 assert.equal(parseGoogleTimestamp('2026-07-24 14:51:17').getFullYear(), 2026);
+assert.equal(parseGoogleTimestamp('2026-07-24T14:51:17.000Z').getTime(), Date.UTC(2026, 6, 24, 14, 51, 17));
+assert.match(formatGoogleTimestamp('2026-07-24T14:51:17.000Z'), /24\.07\.2026, 16:51:17/);
 assert.equal(formatElapsedSince(new Date('2026-07-24T14:50:17'), new Date('2026-07-24T14:51:17')), '1min temu');
 assert.equal(formatElapsedSince(new Date('2026-07-24T12:20:17'), new Date('2026-07-24T14:51:17')), '2h 31min temu');
 assert.deepEqual(buildSettingsPayload({
