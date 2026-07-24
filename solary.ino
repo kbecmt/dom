@@ -17,6 +17,8 @@
 
 #define WIFI_STATUS_LOG_INTERVAL_MS 30000
 #define WIFI_RETRY_INTERVAL_MS 30000
+#define WIFI_SCAN_INTERVAL_MS 120000
+#define WIFI_SCAN_SKIP_LOG_INTERVAL_MS 30000
 
 #define GOOGLE_WEB_APP_URL "https://script.google.com/macros/s/AKfycbzr6hSFnbyXZHB9idDSpMVYkce5BbTTWmqH8xREav1L3kqLUJag5OGRBxfwZbSY-wJO/exec"
 #define GOOGLE_DATA_URL GOOGLE_WEB_APP_URL
@@ -142,6 +144,7 @@ struct AutomationState
 void connectToWiFi();
 void handleWiFi();
 const char *wifiStatusName(wl_status_t status);
+void logWiFiScanResults();
 bool readTemps();
 void updateControl();
 void checkMixerTimer();
@@ -531,6 +534,10 @@ void connectToWiFi()
     {
         WiFi.persistent(false);
         WiFi.setAutoReconnect(true);
+        WiFi.setSleep(false);
+        Serial.print("WiFi MAC: ");
+        Serial.println(WiFi.macAddress());
+        Serial.printf("WiFi konfiguracja: SSID=%s, hasło=%u znaków, DHCP\n", WIFI_SSID, strlen(WIFI_PASSWORD));
         wifiConfigured = true;
     }
 
@@ -545,6 +552,7 @@ void connectToWiFi()
         Serial.print("Łączę z WiFi...");
         WiFi.disconnect(false, false);
         delay(200);
+        logWiFiScanResults();
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         Serial.println(" Rozpoczęto próbę połączenia.");
         return;
@@ -557,8 +565,58 @@ void connectToWiFi()
     Serial.print("WiFi: nadal brak połączenia, ponawiam DHCP...");
     WiFi.disconnect(false, false);
     delay(200);
+    logWiFiScanResults();
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     Serial.println(" nowa próba rozpoczęta.");
+}
+
+void logWiFiScanResults()
+{
+    static unsigned long lastScan = 0;
+    static unsigned long lastSkipLog = 0;
+    static bool firstScan = true;
+    unsigned long now = millis();
+
+    if (!firstScan && now - lastScan < WIFI_SCAN_INTERVAL_MS)
+    {
+        if (now - lastSkipLog >= WIFI_SCAN_SKIP_LOG_INTERVAL_MS)
+        {
+            lastSkipLog = now;
+            unsigned long nextScanMs = WIFI_SCAN_INTERVAL_MS - (now - lastScan);
+            Serial.printf("WiFi scan: pomijam, ostatni skan był niedawno; pełny skan za %lus.\n", nextScanMs / 1000);
+        }
+        return;
+    }
+
+    firstScan = false;
+    lastScan = now;
+    lastSkipLog = now;
+
+    Serial.printf("WiFi scan: szukam SSID=%s...\n", WIFI_SSID);
+    int count = WiFi.scanNetworks(false, true);
+    if (count < 0)
+    {
+        Serial.printf("WiFi scan: błąd skanowania (%d).\n", count);
+        return;
+    }
+
+    bool foundTarget = false;
+    Serial.printf("WiFi scan: znaleziono %d sieci.\n", count);
+    for (int i = 0; i < count; i++)
+    {
+        String ssid = WiFi.SSID(i);
+        int32_t rssi = WiFi.RSSI(i);
+        int32_t channel = WiFi.channel(i);
+        bool target = ssid == WIFI_SSID;
+        foundTarget = foundTarget || target;
+        Serial.printf("WiFi scan: %sSSID=%s, RSSI=%d dBm, kanał=%d\n",
+                      target ? "CEL " : "",
+                      ssid.c_str(),
+                      rssi,
+                      channel);
+    }
+    Serial.printf("WiFi scan: docelowa sieć %s.\n", foundTarget ? "WIDOCZNA" : "NIEWIDOCZNA");
+    WiFi.scanDelete();
 }
 
 // ============= CZUJNIKI =============
