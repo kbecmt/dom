@@ -49,6 +49,34 @@ for (const snapshotMarker of [
 ]) {
   assert.ok(firmware.includes(snapshotMarker), `missing snapshot marker: ${snapshotMarker}`);
 }
+
+for (const tempMarker of [
+  'addJsonFloat(json, "bufferTop", solar.bufferTopTemp',
+  'addJsonFloat(json, "bufferBottom", solar.bufferBottomTemp',
+  'addJsonFloat(json, "collector", solar.collectorTemp',
+  'addJsonFloat(json, "waterTop", solar.waterTopTemp',
+  'addJsonFloat(json, "waterBottom", solar.waterBottomTemp',
+  'addJsonFloat(json, "house", solar.houseTemp',
+  'addJsonFloat(json, "mixer", solar.mixerTemp',
+  'addJsonFloat(json, "return", solar.returnTemp',
+  'addJsonFloat(json, "outdoor", solar.outdoorTemp'
+]) {
+  assert.ok(firmware.includes(tempMarker), `missing Google Forms temp field: ${tempMarker}`);
+}
+
+for (const appTempKey of [
+  'bufferTop',
+  'bufferBottom',
+  'collector',
+  'waterTop',
+  'waterBottom',
+  'house',
+  'mixer',
+  'return',
+  'outdoor'
+]) {
+  assert.match(firmware, new RegExp(`"${appTempKey}"`));
+}
 assert.match(firmware, /urlEncode\(snapshot\)/);
 assert.match(firmware, /http\.POST\(body\)/);
 assert.match(firmware, /client\.setInsecure\(\)/);
