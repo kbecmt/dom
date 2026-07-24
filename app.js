@@ -2,33 +2,8 @@
 // Sterownik Solarny - Aplikacja Webowa
 // =========================================
 
-const DEFAULT_API_BASE = "http://192.168.1.139";
+const DEFAULT_GOOGLE_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe/pub?output=csv";
 
-function getApiBase(locationObj, storageObj) {
-    const loc = locationObj || (typeof window !== 'undefined' ? window.location : null);
-    const storage = storageObj || (typeof window !== 'undefined' ? window.localStorage : null);
-
-    if (loc) {
-        const params = new URLSearchParams(loc.search || '');
-        const apiFromQuery = params.get('api');
-        if (apiFromQuery) {
-            if (storage) storage.setItem('solarApiBase', apiFromQuery);
-            return apiFromQuery.replace(/\/$/, '');
-        }
-
-        const isHostedUi = /(^|\.)github\.io$/i.test(loc.hostname || '') || (loc.hostname || '') === 'raw.githubusercontent.com';
-        if (!isHostedUi && loc.origin && loc.origin !== 'null') return loc.origin;
-    }
-
-    if (storage) {
-        const saved = storage.getItem('solarApiBase');
-        if (saved) return saved.replace(/\/$/, '');
-    }
-
-    return DEFAULT_API_BASE;
-}
-
-const API_BASE = getApiBase();
 const state = {
     connected: false,
     pollingInterval: null,
@@ -65,8 +40,8 @@ function initApp() {
     setupTabs();
     setupEventListeners();
     setupSwipeNavigation();
-    checkConnection();
     startPolling();
+    checkConnection();
 };
 
 function setupSwipeNavigation() {
@@ -134,7 +109,7 @@ function disableSimulation() {
 
 function startPolling() {
     if (state.pollingInterval) clearInterval(state.pollingInterval);
-    state.pollingInterval = setInterval(fetchData, 15000); // Zmieniono na 15 sekund
+    state.pollingInterval = setInterval(fetchData, 60000);
 }
 
 function setupEventListeners() {
@@ -200,21 +175,212 @@ function setupEventListeners() {
     document.getElementById('confirmOkBtn').addEventListener('click', confirmAction);
     document.getElementById('alertModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeAlert(); });
     document.getElementById('confirmModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeConfirm(); });
+
+    const googleRefreshBtn = document.getElementById('btnGoogleRefresh');
+    if (googleRefreshBtn) googleRefreshBtn.addEventListener('click', fetchData);
 }
 
 // ============= POBIERANIE / SYMULACJA =============
 
 async function fetchData() {
     if (state.simMode) { simulateData(); return; }
+    if (getEl('googleLastStatus')) updateLed('googleLastStatus', false, 'Wczytano', 'Pobieram...');
+
     try {
-        const res = await fetch(`${API_BASE}/api/data`);
-        if (!res.ok) throw Error();
-        const data = await res.json();
+        const lastRow = await loadGoogleFormLastEntry();
+        const snapshot = snapshotFromGoogleRow(lastRow);
+        const data = googleSnapshotToAppData(snapshot);
         updateConnectionStatus(true);
         updateAll(data);
+        updateGoogleLastEntry(lastRow);
+        updateLed('googleLastStatus', true, 'Wczytano', 'Błąd');
     } catch (e) {
-        if (!state.simMode) updateConnectionStatus(false);
+        if (!state.simMode) {
+            updateConnectionStatus(false);
+            setText('googleLastSummary', `Błąd: ${e.message}`);
+            updateLed('googleLastStatus', false, 'Wczytano', 'Błąd');
+        }
     }
+}
+
+async function loadGoogleFormLastEntry() {
+    const csvText = await fetchGoogleCsv(DEFAULT_GOOGLE_CSV_URL);
+    const rows = parseCsv(csvText);
+    const lastRow = getLastDataRow(rows);
+    if (!lastRow) throw new Error('brak wpisów w arkuszu');
+    return lastRow;
+}
+
+async function fetchGoogleCsv(sourceUrl) {
+    try {
+        const res = await fetch(sourceUrl, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.text();
+    } catch (error) {
+        const proxyUrl = buildGoogleCsvProxyUrl(sourceUrl);
+        const res = await fetch(proxyUrl, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`proxy HTTP ${res.status}`);
+        return await res.text();
+    }
+}
+
+function buildGoogleCsvProxyUrl(sourceUrl) {
+    return `https://api.allorigins.win/raw?url=${encodeURIComponent(sourceUrl)}`;
+}
+
+function getLastDataRow(rows) {
+    if (!Array.isArray(rows) || rows.length < 2) return null;
+    const dataRows = rows.slice(1).filter(row => row.some(value => String(value || '').trim()));
+    return dataRows[dataRows.length - 1] || null;
+}
+
+function updateGoogleLastEntry(row) {
+    const snapshot = snapshotFromGoogleRow(row);
+    const temps = snapshot.temps || {};
+
+    setText('googleLastTime', row[0] || '--');
+    setText('googleLastCollector', formatGoogleTemp(temps.collector));
+    setText('googleLastWaterTop', formatGoogleTemp(temps.waterTop));
+    setText('googleLastWaterBottom', formatGoogleTemp(temps.waterBottom));
+    setText('googleLastSummary', row[2] || googleLegacySummary(row));
+    setText('googleLastHealth', row[3] || googleLegacyHealth(row));
+    setText('googleLastSnapshot', JSON.stringify(snapshot, null, 2));
+}
+
+function snapshotFromGoogleRow(row) {
+    const raw = row[1] || '';
+    try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+        return {
+            temps: {
+                collector: row[1],
+                waterTop: row[2],
+                waterBottom: row[3]
+            },
+            legacy: true
+        };
+    }
+}
+
+function googleSnapshotToAppData(snapshot) {
+    const temps = snapshot.temps || {};
+    const settings = snapshot.settings || {};
+    const systemState = snapshot.state || {};
+    const automation = snapshot.automation || {};
+    const health = snapshot.health || {};
+
+    return {
+        solar: {
+            collector: numOrNull(temps.collector),
+            waterTop: numOrNull(temps.waterTop),
+            waterBottom: numOrNull(temps.waterBottom),
+            maxWaterTemp: numOrDefault(settings.maxWaterTemp, 85),
+            deltaOn: numOrDefault(settings.solarDeltaOn, 8),
+            deltaOff: numOrDefault(settings.solarDeltaOff, 4),
+            pumpActive: boolOrDefault(systemState.solarPumpActive, false)
+        },
+        buffer: {
+            bufferTop: numOrNull(temps.bufferTop),
+            bufferBottom: numOrNull(temps.bufferBottom),
+            maxBufferTemp: numOrDefault(settings.maxBufferTemp, 85),
+            wodaBuforDeltaOn: numOrDefault(settings.wodaBuforDeltaOn, 8),
+            wodaBuforDeltaOff: numOrDefault(settings.wodaBuforDeltaOff, 4),
+            buforWodaDeltaOn: numOrDefault(settings.buforWodaDeltaOn, 10),
+            buforWodaDeltaOff: numOrDefault(settings.buforWodaDeltaOff, 3),
+            minWodaTemp: numOrDefault(settings.minWodaTemp, 50),
+            pumpActive: boolOrDefault(systemState.bufferPumpActive, false),
+            valveOpen: boolOrDefault(systemState.valveOpen, false),
+            direction: systemState.direction || 'brak'
+        },
+        co: {
+            houseTemp: numOrNull(temps.house),
+            mixerTemp: numOrNull(temps.mixer),
+            bufferTopTemp: numOrNull(temps.bufferTop),
+            maxMixerTemp: numOrDefault(settings.coMaxMixerTemp, 40),
+            targetTemp: numOrDefault(settings.coTargetTemp, 20),
+            deltaOn: numOrDefault(settings.coDeltaOn, 2),
+            deltaOff: numOrDefault(settings.coDeltaOff, 1),
+            pumpActive: boolOrDefault(systemState.coPumpActive, false),
+            mixerPercent: numOrDefault(systemState.mixerPercent, 0),
+            phase: systemState.coPhase || 'idle',
+            returnTemp: numOrNull(temps.return),
+            autoCoEnabled: boolOrDefault(automation.autoCoEnabled, true),
+            autoSolarEnabled: boolOrDefault(automation.autoSolarEnabled, true),
+            autoWbEnabled: boolOrDefault(automation.autoWbEnabled, true),
+            autoBwEnabled: boolOrDefault(automation.autoBwEnabled, true)
+        },
+        outdoorTemp: numOrNull(temps.outdoor),
+        health
+    };
+}
+
+function numOrNull(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number.parseFloat(String(value).replace(',', '.'));
+    return Number.isFinite(number) ? number : null;
+}
+
+function numOrDefault(value, fallback) {
+    const number = numOrNull(value);
+    return number === null ? fallback : number;
+}
+
+function boolOrDefault(value, fallback) {
+    return typeof value === 'boolean' ? value : fallback;
+}
+
+function googleLegacySummary(row) {
+    return `kolektor=${row[1] || '--'}, woda_gora=${row[2] || '--'}, woda_dol=${row[3] || '--'}`;
+}
+
+function googleLegacyHealth(row) {
+    return row.some(value => String(value || '').trim()) ? 'stary format' : '';
+}
+
+function formatGoogleTemp(value) {
+    if (value === undefined || value === null || value === '') return '--.-';
+    const normalized = String(value).replace(',', '.');
+    const number = Number.parseFloat(normalized);
+    return Number.isFinite(number) ? number.toFixed(1) : String(value);
+}
+
+function parseCsv(text) {
+    const rows = [];
+    let row = [];
+    let value = '';
+    let quoted = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"' && quoted && next === '"') {
+            value += '"';
+            i++;
+        } else if (char === '"') {
+            quoted = !quoted;
+        } else if (char === ',' && !quoted) {
+            row.push(value);
+            value = '';
+        } else if ((char === '\n' || char === '\r') && !quoted) {
+            if (char === '\r' && next === '\n') i++;
+            row.push(value);
+            rows.push(row);
+            row = [];
+            value = '';
+        } else {
+            value += char;
+        }
+    }
+
+    if (value || row.length) {
+        row.push(value);
+        rows.push(row);
+    }
+
+    return rows;
 }
 
 function simulateData() {
@@ -551,7 +717,7 @@ function updateConnectionStatus(connected) {
     const text = getEl('statusText');
     if (state.simMode) { if (dot) dot.className = 'status-dot online'; if (text) text.textContent = 'Symulacja'; return; }
     state.connected = connected;
-    if (connected) { if (dot) dot.className = 'status-dot online'; if (text) text.textContent = 'Online'; }
+    if (connected) { if (dot) dot.className = 'status-dot online'; if (text) text.textContent = 'Google Forms'; }
     else { if (dot) dot.className = 'status-dot offline'; if (text) text.textContent = 'Offline'; }
 }
 
@@ -583,15 +749,7 @@ async function controlRelay(relay, enable) {
         showAlert('✅', 'Sukces (sym)', `${names[relay] || relay} została ${action}.`);
         return;
     }
-    try {
-        const payload = {}; payload[relay] = enable;
-        const res = await fetch(`${API_BASE}/api/relay/control`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
-        if (!res.ok) throw Error();
-        const r = await res.json();
-        if (r.status === 'ok') { showAlert('✅', 'Sukces', `${names[relay] || relay} została ${action}.`); setTimeout(fetchData, 500); }
-    } catch (e) { showAlert('❌', 'Błąd', 'Nie udało się sterować urządzeniem.'); }
+    showAlert('ℹ️', 'Tryb odczytu', 'Index.html pobiera dane tylko z Google Forms. Sterowanie przez IP jest wyłączone.');
 }
 
 async function controlAutomation(system, enable) {
@@ -608,15 +766,7 @@ async function controlAutomation(system, enable) {
         fetchData();
         return;
     }
-    try {
-        const payload = { system: system, enabled: enable };
-        const res = await fetch(`${API_BASE}/api/automation/control`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
-        if (!res.ok) throw Error();
-        const r = await res.json();
-        if (r.status === 'ok') { showAlert('✅', 'Sukces', `${names[system] || system} została ${action}.`); setTimeout(fetchData, 500); }
-    } catch (e) { showAlert('❌', 'Błąd', 'Nie udało się sterować automatyką.'); }
+    showAlert('ℹ️', 'Tryb odczytu', 'Index.html pobiera dane tylko z Google Forms. Sterowanie automatyką przez IP jest wyłączone.');
 }
 
 // ============= ZAPIS =============
@@ -638,36 +788,32 @@ async function saveSolarSettings() {
     const maxWT = val('maxWaterTemp'), dOn = val('solarDeltaOn'), dOff = val('solarDeltaOff');
     if (!validateRange(maxWT, 20, 99, 'Max temp. wody') || !validateRange(dOn, 1, 30, 'Delta włączenia') || !validateRange(dOff, 0.5, 20, 'Delta wyłączenia') || !validateDelta(dOn, dOff, 'solarów')) return;
     if (state.simMode) { sim.maxWaterTemp = maxWT; sim.solarDeltaOn = dOn; sim.solarDeltaOff = dOff; showAlert('✅', 'Zapis (sym)', 'Ustawienia solarów zapisane.'); return; }
-    try {
-        const res = await fetch(`${API_BASE}/api/solar/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxWaterTemp: maxWT, deltaOn: dOn, deltaOff: dOff }) });
-        if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia solarów zapisane.'); setTimeout(fetchData, 500);
-    } catch (e) { showAlert('❌', 'Błąd', 'Nie można połączyć się z serwerem.'); }
+    showAlert('ℹ️', 'Tryb odczytu', 'Index.html pobiera dane tylko z Google Forms. Zapis ustawień przez IP jest wyłączony.');
 }
 
 async function saveCoSettings() {
     const maxMixer = val('coMaxMixerTemp'), target = val('coTargetTemp'), dOn = val('coDeltaOn'), dOff = val('coDeltaOff');
     if (!validateRange(maxMixer, 20, 80, 'Max temp. za mieszaczem') || !validateRange(target, 5, 35, 'Temp. zadana w domu') || !validateRange(dOn, 0.1, 20, 'Delta włączenia') || !validateRange(dOff, 0.1, 20, 'Delta wyłączenia') || !validateDelta(dOn, dOff, 'CO')) return;
     if (state.simMode) { sim.coMaxMixerTemp = maxMixer; sim.coTargetTemp = target; sim.coDeltaOn = dOn; sim.coDeltaOff = dOff; showAlert('✅', 'Zapis (sym)', 'Ustawienia CO zapisane.'); return; }
-    try {
-        const res = await fetch(`${API_BASE}/api/co/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxMixerTemp: maxMixer, targetTemp: target, deltaOn: dOn, deltaOff: dOff }) });
-        if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia CO zapisane.'); setTimeout(fetchData, 500);
-    } catch (e) { showAlert('❌', 'Błąd', 'Nie można połączyć się z serwerem.'); }
+    showAlert('ℹ️', 'Tryb odczytu', 'Index.html pobiera dane tylko z Google Forms. Zapis ustawień przez IP jest wyłączony.');
 }
 
 async function saveBufferSettings() {
     const maxBT = val('maxBufferTemp'), wbOn = val('wodaBuforDeltaOn'), wbOff = val('wodaBuforDeltaOff'), bwOn = val('buforWodaDeltaOn'), bwOff = val('buforWodaDeltaOff'), minWT = val('minWodaTemp');
     if (!validateRange(maxBT, 20, 99, 'Max temp. bufora') || !validateRange(wbOn, 1, 30, 'Delta wł. W→B') || !validateRange(wbOff, 0.5, 20, 'Delta wył. W→B') || !validateDelta(wbOn, wbOff, 'W→B') || !validateRange(bwOn, 1, 30, 'Delta wł. B→W') || !validateRange(bwOff, 0.5, 20, 'Delta wył. B→W') || !validateDelta(bwOn, bwOff, 'B→W') || !validateRange(minWT, 20, 80, 'Min temp. wody')) return;
     if (state.simMode) { sim.maxBufferTemp = maxBT; sim.wodaBuforDeltaOn = wbOn; sim.wodaBuforDeltaOff = wbOff; sim.buforWodaDeltaOn = bwOn; sim.buforWodaDeltaOff = bwOff; sim.minWodaTemp = minWT; showAlert('✅', 'Zapis (sym)', 'Ustawienia bufora zapisane.'); return; }
-    try {
-        const res = await fetch(`${API_BASE}/api/buffer/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxBufferTemp: maxBT, wodaBuforDeltaOn: wbOn, wodaBuforDeltaOff: wbOff, buforWodaDeltaOn: bwOn, buforWodaDeltaOff: bwOff, minWodaTemp: minWT }) });
-        if (!res.ok) throw Error(); showAlert('✅', 'Zapisano', 'Ustawienia bufora zapisane.'); setTimeout(fetchData, 500);
-    } catch (e) { showAlert('❌', 'Błąd', 'Nie można połączyć się z serwerem.'); }
+    showAlert('ℹ️', 'Tryb odczytu', 'Index.html pobiera dane tylko z Google Forms. Zapis ustawień przez IP jest wyłączony.');
 }
 
 if (typeof module !== 'undefined') {
     module.exports = {
-        DEFAULT_API_BASE,
-        getApiBase,
+        DEFAULT_GOOGLE_CSV_URL,
+        buildGoogleCsvProxyUrl,
+        getLastDataRow,
+        snapshotFromGoogleRow,
+        googleSnapshotToAppData,
+        formatGoogleTemp,
+        parseCsv,
         isDeltaValid,
         validateDelta
     };

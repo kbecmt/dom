@@ -4,6 +4,7 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Sterownik Solarny</title>
+        <link rel="stylesheet" href="style.css">
     </head>
     <body>
         <div class="container">
@@ -786,7 +787,47 @@
                                 <span class="led-text">Firmware</span>
                             </span>
                         </div>
+                        <div class="status-item">
+                            <span class="status-label">Odczyt ostatniego wpisu</span>
+                            <span class="status-indicator" id="googleLastStatus">
+                                <span class="led led-off"></span>
+                                <span class="led-text">Oczekiwanie</span>
+                            </span>
+                        </div>
                     </div>
+                    <div class="sensor-grid mini google-last-grid">
+                        <div class="sensor-item">
+                            <div class="sensor-label">Czas</div>
+                            <div class="sensor-value small" id="googleLastTime">--</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Kolektor</div>
+                            <div class="sensor-value" id="googleLastCollector">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Góra</div>
+                            <div class="sensor-value" id="googleLastWaterTop">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                        <div class="sensor-item">
+                            <div class="sensor-label">Woda Dół</div>
+                            <div class="sensor-value" id="googleLastWaterBottom">--.-</div>
+                            <div class="sensor-unit">°C</div>
+                        </div>
+                    </div>
+                    <div class="diag-grid google-last-details">
+                        <div class="diag-item">
+                            <span class="diag-label">Podsumowanie:</span>
+                            <span class="diag-value" id="googleLastSummary">--</span>
+                        </div>
+                        <div class="diag-item">
+                            <span class="diag-label">Zdrowie:</span>
+                            <span class="diag-value" id="googleLastHealth">--</span>
+                        </div>
+                    </div>
+                    <pre class="snapshot-preview" id="googleLastSnapshot">{}</pre>
+                    <button id="btnGoogleRefresh" class="btn btn-save">Odśwież ostatni wpis</button>
                 </section>
             </div>
         </div>
@@ -825,5 +866,9 @@
                 </div>
             </div>
         </div>
+        <script src="app.js"></script>
+        <script>
+            if (typeof initApp === 'function') initApp();
+        </script>
     </body>
 </html>

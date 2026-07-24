@@ -1,46 +1,53 @@
 const assert = require('node:assert/strict');
-const { DEFAULT_API_BASE, getApiBase, isDeltaValid } = require('../app.js');
+const fs = require('node:fs');
+const path = require('node:path');
+const {
+  DEFAULT_GOOGLE_CSV_URL,
+  buildGoogleCsvProxyUrl,
+  getLastDataRow,
+  snapshotFromGoogleRow,
+  googleSnapshotToAppData,
+  formatGoogleTemp,
+  parseCsv,
+  isDeltaValid
+} = require('../app.js');
 
-function memoryStorage(initial = {}) {
-  const data = { ...initial };
-  return {
-    getItem(key) {
-      return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null;
-    },
-    setItem(key, value) {
-      data[key] = value;
-    }
-  };
-}
-
-assert.equal(
-  getApiBase({ origin: 'http://192.168.1.50', hostname: '192.168.1.50', search: '' }),
-  'http://192.168.1.50'
-);
-
-const storage = memoryStorage();
-assert.equal(
-  getApiBase(
-    { origin: 'https://kbecmt.github.io', hostname: 'kbecmt.github.io', search: '?api=http://192.168.1.77/' },
-    storage
-  ),
-  'http://192.168.1.77'
-);
-assert.equal(storage.getItem('solarApiBase'), 'http://192.168.1.77/');
-
-assert.equal(
-  getApiBase(
-    { origin: 'https://kbecmt.github.io', hostname: 'kbecmt.github.io', search: '' },
-    memoryStorage({ solarApiBase: 'http://192.168.1.88/' })
-  ),
-  'http://192.168.1.88'
-);
-
-assert.equal(getApiBase(null, null), DEFAULT_API_BASE);
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 
 assert.equal(isDeltaValid(8, 4), true);
 assert.equal(isDeltaValid(4, 4), false);
 assert.equal(isDeltaValid(3, 4), false);
 assert.equal(isDeltaValid(Number.NaN, 1), false);
+
+assert.match(DEFAULT_GOOGLE_CSV_URL, /2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe\/pub\?output=csv/);
+assert.equal(
+  buildGoogleCsvProxyUrl('https://example.com/a?b=1'),
+  'https://api.allorigins.win/raw?url=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1'
+);
+
+const rows = parseCsv([
+  'czas,json,podsumowanie,zdrowie',
+  '',
+  '2026-07-24,"{""temps"":{""collector"":73.1,""waterTop"":59,""waterBottom"":44.5}}",summary,OK'
+].join('\n'));
+assert.deepEqual(getLastDataRow(rows), rows[2]);
+assert.equal(snapshotFromGoogleRow(rows[2]).temps.collector, 73.1);
+assert.equal(formatGoogleTemp('73,125'), '73.1');
+
+const appData = googleSnapshotToAppData({
+  temps: { collector: 73.1, waterTop: 59, waterBottom: 44.5, bufferTop: 42, house: 21, mixer: 33, return: 29, outdoor: 7 },
+  settings: { solarDeltaOn: 9, coTargetTemp: 21.5 },
+  state: { solarPumpActive: true, coPumpActive: false, mixerPercent: 12, direction: 'woda->bufor' },
+  automation: { autoCoEnabled: false }
+});
+assert.equal(appData.solar.collector, 73.1);
+assert.equal(appData.solar.deltaOn, 9);
+assert.equal(appData.buffer.direction, 'woda->bufor');
+assert.equal(appData.co.targetTemp, 21.5);
+assert.equal(appData.co.autoCoEnabled, false);
+assert.equal(appData.outdoorTemp, 7);
+
+assert.doesNotMatch(appSource, /fetch\(`\$\{API_BASE\}\/api\//);
+assert.doesNotMatch(appSource, /\/api\/data/);
 
 console.log('app tests ok');
