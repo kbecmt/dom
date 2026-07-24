@@ -144,7 +144,7 @@ void connectToWiFi();
 void handleWiFi();
 const char *wifiStatusName(wl_status_t status);
 const char *wifiAuthModeName(wifi_auth_mode_t authMode);
-void logWiFiScanResults();
+void logWiFiScanResults(bool forceScan);
 bool readTemps();
 void updateControl();
 void checkMixerTimer();
@@ -550,6 +550,7 @@ void connectToWiFi()
     static bool wifiConfigured = false;
     static bool credentialsStarted = false;
     static unsigned long lastConnectAttempt = 0;
+    static unsigned int connectAttempt = 0;
 
     if (!wifiConfigured)
     {
@@ -570,11 +571,17 @@ void connectToWiFi()
     if (!credentialsStarted)
     {
         credentialsStarted = true;
+        connectAttempt++;
         lastConnectAttempt = millis();
+        Serial.printf("WiFi: próba połączenia #%u, status=%d (%s), freeHeap=%uB\n",
+                      connectAttempt,
+                      status,
+                      wifiStatusName(status),
+                      ESP.getFreeHeap());
         Serial.print("Łączę z WiFi...");
         WiFi.disconnect(false, false);
         delay(200);
-        logWiFiScanResults();
+        logWiFiScanResults(true);
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         Serial.println(" Rozpoczęto próbę połączenia.");
         return;
@@ -584,27 +591,33 @@ void connectToWiFi()
         return;
 
     lastConnectAttempt = millis();
+    connectAttempt++;
+    Serial.printf("WiFi: ponowne połączenie #%u, status=%d (%s), freeHeap=%uB\n",
+                  connectAttempt,
+                  status,
+                  wifiStatusName(status),
+                  ESP.getFreeHeap());
     Serial.print("WiFi: nadal brak połączenia, ponawiam DHCP...");
     WiFi.disconnect(false, false);
     delay(200);
-    logWiFiScanResults();
+    logWiFiScanResults(true);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     Serial.println(" nowa próba rozpoczęta.");
 }
 
-void logWiFiScanResults()
+void logWiFiScanResults(bool forceScan)
 {
     static unsigned long lastScan = 0;
     static bool firstScan = true;
     unsigned long now = millis();
 
-    if (!firstScan && now - lastScan < WIFI_SCAN_INTERVAL_MS)
+    if (!forceScan && !firstScan && now - lastScan < WIFI_SCAN_INTERVAL_MS)
         return;
 
     firstScan = false;
     lastScan = now;
 
-    Serial.printf("WiFi scan: szukam SSID=%s...\n", WIFI_SSID);
+    Serial.printf("WiFi scan: %sSSID=%s...\n", forceScan ? "wymuszony przy reconnect, szukam " : "szukam ", WIFI_SSID);
     int count = WiFi.scanNetworks(false, true);
     if (count < 0)
     {
@@ -1182,11 +1195,6 @@ String urlEncode(const String &value)
 
 void handleGoogleFormLogging()
 {
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        Serial.println("Google Data: pomijam zapis, WiFi niepołączone.");
-        return;
-    }
 
     unsigned long now = millis();
     if (!googleFormLogPending && now - lastGoogleFormLog < GOOGLE_FORM_LOG_INTERVAL_MS)
