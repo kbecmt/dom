@@ -9,9 +9,11 @@ const GOOGLE_DATA_POLL_INTERVAL_MS = 30000;
 const state = {
     connected: false,
     pollingInterval: null,
+    lastEntryAgeInterval: null,
     simMode: false,
     initialized: false,
-    lastData: null
+    lastData: null,
+    lastGoogleEntryDate: null
 };
 
 // Cache dla elementów DOM, aby nie szukać ich przy każdej aktualizacji
@@ -43,6 +45,7 @@ function initApp() {
     setupTabs();
     setupEventListeners();
     setupSwipeNavigation();
+    startLastEntryAgeClock();
     startPolling();
     checkConnection();
 };
@@ -113,6 +116,12 @@ function disableSimulation() {
 function startPolling() {
     if (state.pollingInterval) clearInterval(state.pollingInterval);
     state.pollingInterval = setInterval(fetchData, GOOGLE_DATA_POLL_INTERVAL_MS);
+}
+
+function startLastEntryAgeClock() {
+    if (state.lastEntryAgeInterval) clearInterval(state.lastEntryAgeInterval);
+    state.lastEntryAgeInterval = setInterval(updateLastEntryAgeTop, 1000);
+    updateLastEntryAgeTop();
 }
 
 function setupEventListeners() {
@@ -241,8 +250,12 @@ function getLastDataRow(rows) {
 function updateGoogleLastEntry(row) {
     const snapshot = snapshotFromGoogleRow(row);
     const temps = snapshot.temps || {};
+    const record = googleCurrentDataRecordFromRow(row);
+    const timestamp = googleRowTimestamp(row);
 
-    setText('googleLastTime', row[0] || '--');
+    setText('googleLastTime', timestamp || '--');
+    state.lastGoogleEntryDate = parseGoogleTimestamp(timestamp);
+    updateLastEntryAgeTop();
     setText('googleLastBufferTop', formatGoogleTemp(temps.bufferTop));
     setText('googleLastBufferBottom', formatGoogleTemp(temps.bufferBottom));
     setText('googleLastCollector', formatGoogleTemp(temps.collector));
@@ -252,10 +265,58 @@ function updateGoogleLastEntry(row) {
     setText('googleLastMixer', formatGoogleTemp(temps.mixer));
     setText('googleLastReturn', formatGoogleTemp(temps.return));
     setText('googleLastOutdoor', formatGoogleTemp(temps.outdoor));
-    setText('googleLastSummary', row[2] || googleLegacySummary(row));
-    setText('googleLastHealth', row[3] || googleLegacyHealth(row));
+    setText('googleLastSummary', (record && record.summary) || row[2] || googleLegacySummary(row));
+    setText('googleLastHealth', (record && record.health) || row[3] || googleLegacyHealth(row));
     setText('googleLastSnapshot', JSON.stringify(snapshot, null, 2));
     renderGoogleAllData(snapshot);
+}
+
+function googleCurrentDataRecordFromRow(row) {
+    if (!Array.isArray(row) || !row[0]) return null;
+    try {
+        const parsed = JSON.parse(row[0]);
+        if (parsed && parsed.snapshot && typeof parsed.snapshot === 'object') return parsed;
+    } catch (error) {
+        return null;
+    }
+    return null;
+}
+
+function googleRowTimestamp(row) {
+    const record = googleCurrentDataRecordFromRow(row);
+    return (record && record.updatedAt) || (Array.isArray(row) ? row[0] : '');
+}
+
+function parseGoogleTimestamp(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (match) {
+        const [, year, month, day, hour, minute, second = '0'] = match;
+        const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+        return Number.isNaN(date.getTime()) ? null : date;
+    }
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatElapsedSince(date, now = new Date()) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '--';
+    const diffMs = Math.max(0, now.getTime() - date.getTime());
+    const totalSeconds = Math.floor(diffMs / 1000);
+    if (totalSeconds < 60) return `${totalSeconds}s temu`;
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    if (totalMinutes < 60) return `${totalMinutes}min temu`;
+    const totalHours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (totalHours < 24) return minutes ? `${totalHours}h ${minutes}min temu` : `${totalHours}h temu`;
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    return hours ? `${days}d ${hours}h temu` : `${days}d temu`;
+}
+
+function updateLastEntryAgeTop() {
+    setText('lastEntryAgeTop', formatElapsedSince(state.lastGoogleEntryDate));
 }
 
 function hasAllGoogleTemps(snapshot) {
@@ -265,6 +326,9 @@ function hasAllGoogleTemps(snapshot) {
 }
 
 function snapshotFromGoogleRow(row) {
+    const record = googleCurrentDataRecordFromRow(row);
+    if (record) return record.snapshot;
+
     const raw = row[1] || '';
     try {
         const parsed = JSON.parse(raw);
@@ -1037,6 +1101,8 @@ if (typeof module !== 'undefined') {
         formatSnapshotValue,
         formatGoogleTemp,
         parseCsv,
+        parseGoogleTimestamp,
+        formatElapsedSince,
         buildSettingsPayload,
         isDeltaValid,
         validateDelta

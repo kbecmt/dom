@@ -14,6 +14,8 @@ const {
   formatSnapshotValue,
   formatGoogleTemp,
   parseCsv,
+  parseGoogleTimestamp,
+  formatElapsedSince,
   buildSettingsPayload,
   isDeltaValid
 } = require('../app.js');
@@ -38,9 +40,16 @@ const rows = parseCsv([
   '2026-07-24,"{""temps"":{""bufferTop"":42,""bufferBottom"":31.5,""collector"":73.1,""waterTop"":59,""waterBottom"":44.5,""house"":21,""mixer"":33,""return"":29,""outdoor"":7}}",summary,OK',
   '2026-07-24,"{""temps"":{""collector"":74,""waterTop"":60,""waterBottom"":45}}",short,SHORT'
 ].join('\n'));
+const currentDataRows = parseCsv([
+  'Current data JSON',
+  '"{""ok"":true,""updatedAt"":""2026-07-24T14:51:17.000Z"",""summary"":""current"",""health"":""OK"",""snapshot"":{""temps"":{""bufferTop"":42,""bufferBottom"":31.5,""collector"":73.1,""waterTop"":59,""waterBottom"":44.5,""house"":21,""mixer"":33,""return"":29,""outdoor"":7}}}"'
+].join('\n'));
 assert.deepEqual(getLastDataRow(rows), rows[2]);
+assert.deepEqual(getLastDataRow(currentDataRows), currentDataRows[1]);
 assert.equal(snapshotFromGoogleRow(rows[2]).temps.collector, 73.1);
+assert.equal(snapshotFromGoogleRow(currentDataRows[1]).temps.collector, 73.1);
 assert.equal(hasAllGoogleTemps(snapshotFromGoogleRow(rows[2])), true);
+assert.equal(hasAllGoogleTemps(snapshotFromGoogleRow(currentDataRows[1])), true);
 assert.equal(hasAllGoogleTemps(snapshotFromGoogleRow(rows[3])), false);
 assert.equal(formatGoogleTemp('73,125'), '73.1');
 
@@ -63,6 +72,9 @@ assert.equal(googleFieldLabel('coTargetTemp'), 'CO temp. zadana');
 assert.equal(googleFieldLabel('googleFormLogPending'), 'Zapis Google oczekuje');
 assert.equal(formatSnapshotValue(true), 'Tak');
 assert.equal(formatSnapshotValue(21.55), '21.6');
+assert.equal(parseGoogleTimestamp('2026-07-24 14:51:17').getFullYear(), 2026);
+assert.equal(formatElapsedSince(new Date('2026-07-24T14:50:17'), new Date('2026-07-24T14:51:17')), '1min temu');
+assert.equal(formatElapsedSince(new Date('2026-07-24T12:20:17'), new Date('2026-07-24T14:51:17')), '2h 31min temu');
 assert.deepEqual(buildSettingsPayload({
   maxWaterTemp: '70',
   solarDeltaOn: '8',

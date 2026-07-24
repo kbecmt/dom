@@ -21,12 +21,10 @@ assert.match(firmware, /local_IP\(192,\s*168,\s*1,\s*139\)/);
 assert.match(firmware, /#include <HTTPClient\.h>/);
 assert.match(firmware, /#include <WiFiClientSecure\.h>/);
 assert.match(firmware, /#include <ArduinoJson\.h>/);
-assert.match(firmware, /GOOGLE_FORM_URL "https:\/\/docs\.google\.com\/forms\/u\/0\/d\/e\/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg\/formResponse"/);
-assert.match(firmware, /GOOGLE_FORM_ENTRY_SNAPSHOT_JSON "entry\.1561554265"/);
-assert.match(firmware, /GOOGLE_FORM_ENTRY_SUMMARY "entry\.2118651019"/);
-assert.match(firmware, /GOOGLE_FORM_ENTRY_HEALTH "entry\.607098449"/);
+assert.match(firmware, /GOOGLE_WEB_APP_URL "https:\/\/script\.google\.com\/macros\/s\/AKfycbwnXUly2oKjJfwnhEGTOTIil9v9TtrM6m93VhLxWVTaVIdmA-iGwgYXDKYZm6A56Uc3\/exec"/);
+assert.match(firmware, /GOOGLE_DATA_URL GOOGLE_WEB_APP_URL/);
 assert.match(firmware, /GOOGLE_FORM_LOG_INTERVAL_MS 30000/);
-assert.match(firmware, /GOOGLE_SETTINGS_URL "https:\/\/script\.google\.com\/macros\/s\/AKfycbwnXUly2oKjJfwnhEGTOTIil9v9TtrM6m93VhLxWVTaVIdmA-iGwgYXDKYZm6A56Uc3\/exec"/);
+assert.match(firmware, /GOOGLE_SETTINGS_URL GOOGLE_WEB_APP_URL "\?type=settings"/);
 assert.match(firmware, /GOOGLE_SETTINGS_FETCH_INTERVAL_MS 60000/);
 assert.match(firmware, /handleGoogleFormLogging\(\);/);
 assert.match(firmware, /handleGoogleSettings\(\);/);
@@ -65,7 +63,7 @@ for (const tempMarker of [
   'addJsonFloat(json, "return", solar.returnTemp',
   'addJsonFloat(json, "outdoor", solar.outdoorTemp'
 ]) {
-  assert.ok(firmware.includes(tempMarker), `missing Google Forms temp field: ${tempMarker}`);
+  assert.ok(firmware.includes(tempMarker), `missing Google data temp field: ${tempMarker}`);
 }
 
 for (const appTempKey of [
@@ -82,6 +80,7 @@ for (const appTempKey of [
   assert.match(firmware, new RegExp(`"${appTempKey}"`));
 }
 assert.match(firmware, /urlEncode\(snapshot\)/);
+assert.match(firmware, /type=data&snapshot=/);
 assert.match(firmware, /http\.POST\(body\)/);
 assert.match(firmware, /client\.setInsecure\(\)/);
 for (const settingsMarker of [

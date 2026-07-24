@@ -5,13 +5,13 @@
  * 3. Wklej ten plik
  * 4. Uruchom createSolaryGoogleForm()
  *
- * Skrypt tworzy formularz zgodny z aktualnym solary.ino:
- * - entry dla pelnego JSON snapshotu
- * - entry dla krotkiego podsumowania
- * - entry dla stanu czujnikow/diagnostyki
+ * Skrypt obsluguje dwa tryby pracy:
+ * - type=data: nadpisuje aktualny snapshot w arkuszu "Aktualny stan", komorka A2
+ * - type=settings: nadpisuje aktualne ustawienia w arkuszu "Ustawienia", komorka A2
  *
- * Wszystkie parametry ESP sa zapisywane w polu "Snapshot JSON".
+ * Google Form moze zostac tylko do starej kompatybilnosci. Nowy zapis ESP nie dopisuje odpowiedzi formularza.
  */
+var SOLARY_DATA_SHEET_NAME = 'Aktualny stan';
 var SOLARY_SETTINGS_SHEET_NAME = 'Ustawienia';
 
 function createSolaryGoogleForm() {
@@ -52,6 +52,7 @@ function createSolaryGoogleForm() {
   var spreadsheet = SpreadsheetApp.create('Solary ESP32 - odpowiedzi');
   form.setDestination(FormApp.DestinationType.SPREADSHEET, spreadsheet.getId());
   PropertiesService.getScriptProperties().setProperty('SOLARY_SPREADSHEET_ID', spreadsheet.getId());
+  ensureCurrentDataSheet_(spreadsheet);
   ensureSettingsSheet_(spreadsheet);
 
   var entryIds = getEntryIdsFromPrefill_(form, [
@@ -81,47 +82,41 @@ function createSolaryGoogleForm() {
 }
 
 function doPost(e) {
+  var type = e && e.parameter && e.parameter.type ? e.parameter.type : '';
+  if (type === 'data') return saveCurrentData_(e);
+
   var payload = parseSettingsPayload_(e);
   var settings = validateSettings_(payload.settings);
   var spreadsheet = getSolarySpreadsheet_();
   var sheet = ensureSettingsSheet_(spreadsheet);
   var now = new Date();
-
-  sheet.appendRow([
-    now,
-    payload.scope || 'all',
-    JSON.stringify(settings),
-    payload.source || 'index.html'
-  ]);
-  PropertiesService.getScriptProperties().setProperty('SOLARY_CURRENT_SETTINGS', JSON.stringify({
+  var current = {
+    ok: true,
     updatedAt: now.toISOString(),
     scope: payload.scope || 'all',
+    source: payload.source || 'index.html',
     settings: settings
-  }));
+  };
+
+  sheet.getRange('A2').setValue(JSON.stringify(current));
+  PropertiesService.getScriptProperties().setProperty('SOLARY_CURRENT_SETTINGS', JSON.stringify(current));
 
   return jsonOutput_({
     ok: true,
-    updatedAt: now.toISOString(),
+    updatedAt: current.updatedAt,
     settings: settings
   });
 }
 
 function doGet(e) {
+  var type = e && e.parameter && e.parameter.type ? e.parameter.type : 'settings';
+  if (type === 'data') return jsonOrJsonpOutput_(getCurrentData_(), e);
+
   var current = getCurrentSettings_();
-  var callback = e && e.parameter ? e.parameter.callback : '';
-  if (callback) {
-    return ContentService
-      .createTextOutput(callback + '(' + JSON.stringify(current) + ');')
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
-  }
-  return jsonOutput_(current);
+  return jsonOrJsonpOutput_(current, e);
 }
 
-function sendSolaryTestResponse() {
-  var formUrl = 'WKLEJ_TUTAJ_FORM_PUBLIC_URL';
-  var form = FormApp.openByUrl(formUrl);
-  var items = form.getItems();
-  var response = form.createResponse();
+function saveSolaryTestCurrentData() {
   var snapshot = {
     uptimeMs: 987654,
     runtime: {
@@ -194,10 +189,13 @@ function sendSolaryTestResponse() {
     }
   };
 
-  response.withItemResponse(items[0].asParagraphTextItem().createResponse(JSON.stringify(snapshot)));
-  response.withItemResponse(items[1].asParagraphTextItem().createResponse('TEST pelny wpis: 9 temperatur, nastawy, stany, automatyka, zdrowie, wifi'));
-  response.withItemResponse(items[2].asTextItem().createResponse('TEST_OK_FULL'));
-  response.submit();
+  saveCurrentData_({
+    parameter: {
+      snapshot: JSON.stringify(snapshot),
+      summary: 'TEST pelny wpis: 9 temperatur, nastawy, stany, automatyka, zdrowie, wifi',
+      health: 'TEST_OK_FULL'
+    }
+  });
 }
 
 function getEntryIdsFromPrefill_(form, fields) {
@@ -244,6 +242,45 @@ function parseSettingsPayload_(e) {
   };
 }
 
+function saveCurrentData_(e) {
+  var snapshotText = e.parameter && e.parameter.snapshot ? e.parameter.snapshot : '';
+  var summary = e.parameter && e.parameter.summary ? e.parameter.summary : '';
+  var health = e.parameter && e.parameter.health ? e.parameter.health : '';
+
+  if (!snapshotText && e.postData && e.postData.contents) {
+    var body = e.postData.contents;
+    try {
+      var parsedBody = JSON.parse(body);
+      snapshotText = parsedBody.snapshot ? JSON.stringify(parsedBody.snapshot) : body;
+      summary = parsedBody.summary || summary;
+      health = parsedBody.health || health;
+    } catch (err) {
+      snapshotText = body;
+    }
+  }
+
+  if (!snapshotText) throw new Error('Brak pola snapshot.');
+  var snapshot = typeof snapshotText === 'string' ? JSON.parse(snapshotText) : snapshotText;
+  var now = new Date();
+  var current = {
+    ok: true,
+    updatedAt: now.toISOString(),
+    summary: summary,
+    health: health,
+    snapshot: snapshot
+  };
+
+  var spreadsheet = getSolarySpreadsheet_();
+  var sheet = ensureCurrentDataSheet_(spreadsheet);
+  sheet.getRange('A2').setValue(JSON.stringify(current));
+  PropertiesService.getScriptProperties().setProperty('SOLARY_CURRENT_DATA', JSON.stringify(current));
+
+  return jsonOutput_({
+    ok: true,
+    updatedAt: current.updatedAt
+  });
+}
+
 function validateSettings_(settings) {
   var result = {
     maxWaterTemp: readNumber_(settings, 'maxWaterTemp', 20, 99),
@@ -285,16 +322,21 @@ function getCurrentSettings_() {
   if (fromProps) return JSON.parse(fromProps);
 
   var sheet = ensureSettingsSheet_(getSolarySpreadsheet_());
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { ok: false, message: 'Brak zapisanych ustawien.' };
+  var value = sheet.getRange('A2').getValue();
+  if (!value) return { ok: false, message: 'Brak zapisanych ustawien.' };
 
-  var values = sheet.getRange(lastRow, 1, 1, 4).getValues()[0];
-  return {
-    ok: true,
-    updatedAt: values[0] instanceof Date ? values[0].toISOString() : String(values[0]),
-    scope: values[1],
-    settings: JSON.parse(values[2])
-  };
+  return JSON.parse(value);
+}
+
+function getCurrentData_() {
+  var fromProps = PropertiesService.getScriptProperties().getProperty('SOLARY_CURRENT_DATA');
+  if (fromProps) return JSON.parse(fromProps);
+
+  var sheet = ensureCurrentDataSheet_(getSolarySpreadsheet_());
+  var value = sheet.getRange('A2').getValue();
+  if (!value) return { ok: false, message: 'Brak zapisanego stanu.' };
+
+  return JSON.parse(value);
 }
 
 function getSolarySpreadsheet_() {
@@ -311,7 +353,18 @@ function ensureSettingsSheet_(spreadsheet) {
   var sheet = spreadsheet.getSheetByName(SOLARY_SETTINGS_SHEET_NAME);
   if (!sheet) sheet = spreadsheet.insertSheet(SOLARY_SETTINGS_SHEET_NAME);
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['Timestamp', 'Scope', 'Settings JSON', 'Source']);
+    sheet.getRange('A1').setValue('Current settings JSON');
+  }
+  return sheet;
+}
+
+function ensureCurrentDataSheet_(spreadsheet) {
+  var sheet = spreadsheet.getSheetByName(SOLARY_DATA_SHEET_NAME);
+  if (!sheet) sheet = spreadsheet.insertSheet(SOLARY_DATA_SHEET_NAME);
+  spreadsheet.setActiveSheet(sheet);
+  spreadsheet.moveActiveSheet(1);
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange('A1').setValue('Current data JSON');
   }
   return sheet;
 }
@@ -320,4 +373,14 @@ function jsonOutput_(value) {
   return ContentService
     .createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function jsonOrJsonpOutput_(value, e) {
+  var callback = e && e.parameter ? e.parameter.callback : '';
+  if (callback) {
+    return ContentService
+      .createTextOutput(callback + '(' + JSON.stringify(value) + ');')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return jsonOutput_(value);
 }

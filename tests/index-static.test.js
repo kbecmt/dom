@@ -8,6 +8,7 @@ assert.match(html, /<link rel="stylesheet" href="style\.css">/);
 assert.match(html, /<script src="app\.js"><\/script>/);
 assert.match(html, /typeof initApp === 'function'\) initApp\(\)/);
 for (const id of [
+  'lastEntryAgeTop',
   'googleLastStatus',
   'googleLastTime',
   'googleLastBufferTop',

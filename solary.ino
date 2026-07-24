@@ -25,12 +25,10 @@ IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
 IPAddress secondaryDNS(1, 1, 1, 1);
 
-#define GOOGLE_FORM_URL "https://docs.google.com/forms/u/0/d/e/1FAIpQLSeMyHb_K9o5BwSu5TI9O8MQ973W9DqwT4RfNv4NN-t1LpUDQg/formResponse"
-#define GOOGLE_FORM_ENTRY_SNAPSHOT_JSON "entry.1561554265"
-#define GOOGLE_FORM_ENTRY_SUMMARY "entry.2118651019"
-#define GOOGLE_FORM_ENTRY_HEALTH "entry.607098449"
+#define GOOGLE_WEB_APP_URL "https://script.google.com/macros/s/AKfycbwnXUly2oKjJfwnhEGTOTIil9v9TtrM6m93VhLxWVTaVIdmA-iGwgYXDKYZm6A56Uc3/exec"
+#define GOOGLE_DATA_URL GOOGLE_WEB_APP_URL
 #define GOOGLE_FORM_LOG_INTERVAL_MS 30000
-#define GOOGLE_SETTINGS_URL "https://script.google.com/macros/s/AKfycbwnXUly2oKjJfwnhEGTOTIil9v9TtrM6m93VhLxWVTaVIdmA-iGwgYXDKYZm6A56Uc3/exec"
+#define GOOGLE_SETTINGS_URL GOOGLE_WEB_APP_URL "?type=settings"
 #define GOOGLE_SETTINGS_FETCH_INTERVAL_MS 60000
 
 // ============= PINY GPIO =============
@@ -1116,9 +1114,9 @@ bool sendTempsToGoogleForm()
     HTTPClient http;
     client.setInsecure();
 
-    if (!http.begin(client, GOOGLE_FORM_URL))
+    if (!http.begin(client, GOOGLE_DATA_URL))
     {
-        Serial.println("Google Forms: nie można rozpocząć połączenia.");
+        Serial.println("Google Data: nie można rozpocząć połączenia.");
         return false;
     }
 
@@ -1128,16 +1126,11 @@ bool sendTempsToGoogleForm()
 
     String body;
     body.reserve(snapshot.length() * 3 + summary.length() * 3 + 96);
-    body += GOOGLE_FORM_ENTRY_SNAPSHOT_JSON;
-    body += "=";
+    body += "type=data&snapshot=";
     body += urlEncode(snapshot);
-    body += "&";
-    body += GOOGLE_FORM_ENTRY_SUMMARY;
-    body += "=";
+    body += "&summary=";
     body += urlEncode(summary);
-    body += "&";
-    body += GOOGLE_FORM_ENTRY_HEALTH;
-    body += "=";
+    body += "&health=";
     body += urlEncode(health);
 
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -1146,11 +1139,11 @@ bool sendTempsToGoogleForm()
 
     if (code > 0 && code < 400)
     {
-        Serial.printf("Google Forms: zapis OK (HTTP %d)\n", code);
+        Serial.printf("Google Data: zapis OK (HTTP %d)\n", code);
         return true;
     }
 
-    Serial.printf("Google Forms: błąd zapisu (HTTP %d)\n", code);
+    Serial.printf("Google Data: błąd zapisu (HTTP %d)\n", code);
     return false;
 }
 

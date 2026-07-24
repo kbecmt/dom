@@ -7,10 +7,16 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'google-form-create.gs
 for (const marker of [
   'function doPost(e)',
   'function doGet(e)',
+  'SOLARY_DATA_SHEET_NAME',
+  'Aktualny stan',
   'SOLARY_SETTINGS_SHEET_NAME',
   'Ustawienia',
   'SOLARY_SPREADSHEET_ID',
+  'SOLARY_CURRENT_DATA',
   'SOLARY_CURRENT_SETTINGS',
+  'saveCurrentData_',
+  'ensureCurrentDataSheet_',
+  'sheet.getRange(\'A2\').setValue(JSON.stringify(current))',
   'validateSettings_',
   'maxWaterTemp',
   'solarDeltaOn',
@@ -20,6 +26,8 @@ for (const marker of [
 ]) {
   assert.ok(source.includes(marker), `missing Google Apps Script marker: ${marker}`);
 }
+
+assert.doesNotMatch(source, /appendRow\(\[/);
 
 assert.match(source, /solarDeltaOff[\s\S]+solarDeltaOn/);
 assert.match(source, /wodaBuforDeltaOff[\s\S]+wodaBuforDeltaOn/);
