@@ -8,6 +8,7 @@ const {
   GOOGLE_DATA_POLL_INTERVAL_MS,
   buildGoogleCsvProxyUrl,
   fetchGoogleJsonp,
+  postGoogleFormWithoutCors,
   getLastDataRow,
   snapshotFromGoogleRow,
   hasAllGoogleTemps,
@@ -128,7 +129,11 @@ assert.match(appSource, /function fetchGoogleJsonp\(sourceUrl/);
 assert.match(appSource, /callback=/);
 assert.match(appSource, /falling back to CSV/);
 assert.match(appSource, /function sendSettingsToGoogle\(scope, settings\)/);
+assert.match(appSource, /function postGoogleFormWithoutCors\(actionUrl, fields\)/);
+assert.doesNotMatch(appSource, /mode: 'no-cors'/);
+assert.doesNotMatch(appSource, /await fetch\(GOOGLE_SETTINGS_WEB_APP_URL/);
 
 assert.equal(typeof fetchGoogleJsonp, 'function');
+assert.equal(typeof postGoogleFormWithoutCors, 'function');
 
 console.log('app tests ok');

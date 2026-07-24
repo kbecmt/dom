@@ -1106,18 +1106,44 @@ async function sendSettingsToGoogle(scope, settings) {
         showAlert('⚠️', 'Brak adresu Apps Script', 'Wklej URL wdrożenia Web App do GOOGLE_SETTINGS_WEB_APP_URL w app.js.');
         return false;
     }
-    const body = new URLSearchParams({
+    postGoogleFormWithoutCors(GOOGLE_SETTINGS_WEB_APP_URL, {
         type: 'settings',
         scope,
         settings: JSON.stringify(settings)
     });
-    await fetch(GOOGLE_SETTINGS_WEB_APP_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-        body: body.toString()
-    });
     return true;
+}
+
+function postGoogleFormWithoutCors(actionUrl, fields) {
+    if (typeof document === 'undefined') return;
+
+    const frameName = `solaryGooglePost_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    const iframe = document.createElement('iframe');
+    iframe.name = frameName;
+    iframe.style.display = 'none';
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = actionUrl;
+    form.target = frameName;
+    form.style.display = 'none';
+
+    Object.entries(fields).forEach(([name, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+    });
+
+    document.body.appendChild(iframe);
+    document.body.appendChild(form);
+    form.submit();
+
+    setTimeout(() => {
+        if (form.parentNode) form.parentNode.removeChild(form);
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    }, 15000);
 }
 
 async function saveSolarSettings() {
@@ -1150,6 +1176,7 @@ if (typeof module !== 'undefined') {
         buildGoogleCsvProxyUrl,
         fetchGoogleCurrentData,
         fetchGoogleJsonp,
+        postGoogleFormWithoutCors,
         getLastDataRow,
         snapshotFromGoogleRow,
         hasAllGoogleTemps,

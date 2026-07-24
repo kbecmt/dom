@@ -5,7 +5,7 @@ const path = require('node:path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
 assert.match(html, /<link rel="stylesheet" href="style\.css">/);
-assert.match(html, /<script src="app\.js"><\/script>/);
+assert.match(html, /<script src="app\.js\?v=20260724-google-webapp"><\/script>/);
 assert.match(html, /typeof initApp === 'function'\) initApp\(\)/);
 for (const id of [
   'lastEntryAgeTop',
