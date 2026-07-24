@@ -18,7 +18,13 @@ for (const marker of [
 
 assert.doesNotMatch(firmware, /WIFI_USE_STATIC_IP/);
 assert.doesNotMatch(firmware, /WiFi\.config/);
+assert.doesNotMatch(firmware, /WiFi\.mode/);
+assert.doesNotMatch(firmware, /WiFi\.mode\s*\([^)]*WIFI_STA/);
 assert.doesNotMatch(firmware, /local_IP\(192,\s*168,\s*1,\s*139\)/);
+assert.match(firmware, /WIFI_RETRY_INTERVAL_MS 30000/);
+assert.match(firmware, /wifiStatusName\(wl_status_t status\)/);
+assert.match(firmware, /WL_DISCONNECTED/);
+assert.match(firmware, /WiFi\.disconnect\(false, false\)/);
 assert.match(firmware, /#include <HTTPClient\.h>/);
 assert.match(firmware, /#include <WiFiClientSecure\.h>/);
 assert.match(firmware, /#include <ArduinoJson\.h>/);
@@ -83,6 +89,10 @@ for (const appTempKey of [
 assert.match(firmware, /urlEncode\(snapshot\)/);
 assert.match(firmware, /type=data&snapshot=/);
 assert.match(firmware, /http\.POST\(body\)/);
+assert.match(firmware, /Google Data: POST %s/);
+assert.match(firmware, /snapshot=%uB, summary=%uB, health=%uB/);
+assert.match(firmware, /wysyłam body=%uB/);
+assert.match(firmware, /odpowiedź błędu/);
 assert.match(firmware, /client\.setInsecure\(\)/);
 for (const settingsMarker of [
   'fetchSettingsFromGoogle()',

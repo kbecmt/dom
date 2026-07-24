@@ -16,7 +16,7 @@
 #endif
 
 #define WIFI_STATUS_LOG_INTERVAL_MS 30000
-#define WIFI_CONNECT_GRACE_MS 120000
+#define WIFI_RETRY_INTERVAL_MS 30000
 
 #define GOOGLE_WEB_APP_URL "https://script.google.com/macros/s/AKfycbzr6hSFnbyXZHB9idDSpMVYkce5BbTTWmqH8xREav1L3kqLUJag5OGRBxfwZbSY-wJO/exec"
 #define GOOGLE_DATA_URL GOOGLE_WEB_APP_URL
@@ -141,6 +141,7 @@ struct AutomationState
 // Forward declarations
 void connectToWiFi();
 void handleWiFi();
+const char *wifiStatusName(wl_status_t status);
 bool readTemps();
 void updateControl();
 void checkMixerTimer();
@@ -476,6 +477,8 @@ void handleWiFi()
             wasConnected = true;
             Serial.print("WiFi połączone. IP: ");
             Serial.println(WiFi.localIP());
+            Serial.print("WiFi RSSI: ");
+            Serial.println(WiFi.RSSI());
         }
         return;
     }
@@ -485,8 +488,31 @@ void handleWiFi()
     if (millis() - lastWifiCheck >= WIFI_STATUS_LOG_INTERVAL_MS)
     {
         lastWifiCheck = millis();
-        Serial.printf("WiFi status=%d, czekam na połączenie...\n", status);
+        Serial.printf("WiFi status=%d (%s), SSID=%s, ponawiam gdy trzeba...\n", status, wifiStatusName(status), WIFI_SSID);
         connectToWiFi();
+    }
+}
+
+const char *wifiStatusName(wl_status_t status)
+{
+    switch (status)
+    {
+    case WL_IDLE_STATUS:
+        return "IDLE";
+    case WL_NO_SSID_AVAIL:
+        return "NO_SSID";
+    case WL_SCAN_COMPLETED:
+        return "SCAN_COMPLETED";
+    case WL_CONNECTED:
+        return "CONNECTED";
+    case WL_CONNECT_FAILED:
+        return "CONNECT_FAILED";
+    case WL_CONNECTION_LOST:
+        return "CONNECTION_LOST";
+    case WL_DISCONNECTED:
+        return "DISCONNECTED";
+    default:
+        return "UNKNOWN";
     }
 }
 
@@ -512,18 +538,20 @@ void connectToWiFi()
         credentialsStarted = true;
         lastConnectAttempt = millis();
         Serial.print("Łączę z WiFi...");
+        WiFi.disconnect(false, false);
+        delay(200);
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         Serial.println(" Rozpoczęto próbę połączenia.");
         return;
     }
 
-    if (millis() - lastConnectAttempt < WIFI_CONNECT_GRACE_MS)
+    if (millis() - lastConnectAttempt < WIFI_RETRY_INTERVAL_MS)
         return;
 
     lastConnectAttempt = millis();
-    Serial.print("WiFi: próba trwa zbyt długo, restartuję połączenie...");
+    Serial.print("WiFi: nadal brak połączenia, ponawiam DHCP...");
     WiFi.disconnect(false, false);
-    delay(1000);
+    delay(200);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     Serial.println(" nowa próba rozpoczęta.");
 }
@@ -1072,19 +1100,30 @@ String urlEncode(const String &value)
 void handleGoogleFormLogging()
 {
     if (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.println("Google Data: pomijam zapis, WiFi niepołączone.");
         return;
+    }
 
     unsigned long now = millis();
     if (!googleFormLogPending && now - lastGoogleFormLog < GOOGLE_FORM_LOG_INTERVAL_MS)
+    {
+        unsigned long waitMs = GOOGLE_FORM_LOG_INTERVAL_MS - (now - lastGoogleFormLog);
+        Serial.printf("Google Data: następny zapis za %lus.\n", waitMs / 1000);
         return;
+    }
 
     if (!solar.solarTempsOk)
     {
-        Serial.println("Google Forms: pomijam zapis, błędne temperatury solarów.");
+        Serial.println("Google Data: pomijam zapis, błędne temperatury solarów.");
         googleFormLogPending = false;
         lastGoogleFormLog = now;
         return;
     }
+
+    Serial.printf("Google Data: przygotowuję zapis, pending=%s, od_ostatniego=%lus.\n",
+                  googleFormLogPending ? "TAK" : "NIE",
+                  lastGoogleFormLog == 0 ? 0 : (now - lastGoogleFormLog) / 1000);
 
     if (sendTempsToGoogleForm())
     {
@@ -1109,6 +1148,12 @@ bool sendTempsToGoogleForm()
     String summary = buildGoogleFormSummary();
     String health = buildGoogleFormHealth();
 
+    Serial.printf("Google Data: POST %s\n", GOOGLE_DATA_URL);
+    Serial.printf("Google Data: snapshot=%uB, summary=%uB, health=%uB\n",
+                  snapshot.length(), summary.length(), health.length());
+    Serial.printf("Google Data: temp kolektor=%.1f, woda_gora=%.1f, bufor_gora=%.1f, dom=%.1f\n",
+                  solar.collectorTemp, solar.waterTopTemp, solar.bufferTopTemp, solar.houseTemp);
+
     String body;
     body.reserve(snapshot.length() * 3 + summary.length() * 3 + 96);
     body += "type=data&snapshot=";
@@ -1119,16 +1164,22 @@ bool sendTempsToGoogleForm()
     body += urlEncode(health);
 
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    Serial.printf("Google Data: wysyłam body=%uB...\n", body.length());
     int code = http.POST(body);
+    String response = http.getString();
     http.end();
 
     if (code > 0 && code < 400)
     {
         Serial.printf("Google Data: zapis OK (HTTP %d)\n", code);
+        if (response.length() > 0)
+            Serial.printf("Google Data: odpowiedź: %.160s\n", response.c_str());
         return true;
     }
 
     Serial.printf("Google Data: błąd zapisu (HTTP %d)\n", code);
+    if (response.length() > 0)
+        Serial.printf("Google Data: odpowiedź błędu: %.240s\n", response.c_str());
     return false;
 }
 
