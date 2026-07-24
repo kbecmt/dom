@@ -16,12 +16,13 @@ for (const marker of [
   assert.ok(firmware.includes(marker), `missing firmware fail-safe marker: ${marker}`);
 }
 
-assert.match(firmware, /WIFI_USE_STATIC_IP true/);
-assert.match(firmware, /local_IP\(192,\s*168,\s*1,\s*139\)/);
+assert.doesNotMatch(firmware, /WIFI_USE_STATIC_IP/);
+assert.doesNotMatch(firmware, /WiFi\.config/);
+assert.doesNotMatch(firmware, /local_IP\(192,\s*168,\s*1,\s*139\)/);
 assert.match(firmware, /#include <HTTPClient\.h>/);
 assert.match(firmware, /#include <WiFiClientSecure\.h>/);
 assert.match(firmware, /#include <ArduinoJson\.h>/);
-assert.match(firmware, /GOOGLE_WEB_APP_URL "https:\/\/script\.google\.com\/macros\/s\/AKfycbwnXUly2oKjJfwnhEGTOTIil9v9TtrM6m93VhLxWVTaVIdmA-iGwgYXDKYZm6A56Uc3\/exec"/);
+assert.match(firmware, /GOOGLE_WEB_APP_URL "https:\/\/script\.google\.com\/macros\/s\/[^"]+\/exec"/);
 assert.match(firmware, /GOOGLE_DATA_URL GOOGLE_WEB_APP_URL/);
 assert.match(firmware, /GOOGLE_FORM_LOG_INTERVAL_MS 30000/);
 assert.match(firmware, /GOOGLE_SETTINGS_URL GOOGLE_WEB_APP_URL "\?type=settings"/);

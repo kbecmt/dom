@@ -18,14 +18,7 @@
 #define WIFI_STATUS_LOG_INTERVAL_MS 30000
 #define WIFI_CONNECT_GRACE_MS 120000
 
-#define WIFI_USE_STATIC_IP true
-IPAddress local_IP(192, 168, 1, 139);
-IPAddress gateway(192, 168, 1, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(8, 8, 8, 8);
-IPAddress secondaryDNS(1, 1, 1, 1);
-
-#define GOOGLE_WEB_APP_URL "https://script.google.com/macros/s/AKfycbwTJzaqg-AXMZRT2Lg0w12xt_CbV5igs6v9mejUmPGeTf_viHZqkMe1hbjJ4Ea-BtID/exec"
+#define GOOGLE_WEB_APP_URL "https://script.google.com/macros/s/AKfycbzr6hSFnbyXZHB9idDSpMVYkce5BbTTWmqH8xREav1L3kqLUJag5OGRBxfwZbSY-wJO/exec"
 #define GOOGLE_DATA_URL GOOGLE_WEB_APP_URL
 #define GOOGLE_FORM_LOG_INTERVAL_MS 30000
 #define GOOGLE_SETTINGS_URL GOOGLE_WEB_APP_URL "?type=settings"
@@ -519,10 +512,6 @@ void connectToWiFi()
         credentialsStarted = true;
         lastConnectAttempt = millis();
         Serial.print("Łączę z WiFi...");
-        if (WIFI_USE_STATIC_IP && !WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
-        {
-            Serial.println(" Nie udało się ustawić stałego IP.");
-        }
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         Serial.println(" Rozpoczęto próbę połączenia.");
         return;
@@ -535,10 +524,6 @@ void connectToWiFi()
     Serial.print("WiFi: próba trwa zbyt długo, restartuję połączenie...");
     WiFi.disconnect(false, false);
     delay(1000);
-    if (WIFI_USE_STATIC_IP && !WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
-    {
-        Serial.print(" nie udało się ustawić stałego IP.");
-    }
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     Serial.println(" nowa próba rozpoczęta.");
 }

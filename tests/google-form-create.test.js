@@ -15,6 +15,8 @@ for (const marker of [
   'SOLARY_CURRENT_DATA',
   'SOLARY_CURRENT_SETTINGS',
   'saveCurrentData_',
+  'parsePostParams_',
+  'decodeFormComponent_',
   'ensureCurrentDataSheet_',
   'sheet.getRange(\'A2\').setValue(JSON.stringify(current))',
   'validateSettings_',

@@ -82,7 +82,8 @@ function createSolaryGoogleForm() {
 }
 
 function doPost(e) {
-  var type = e && e.parameter && e.parameter.type ? e.parameter.type : '';
+  var params = parsePostParams_(e);
+  var type = params.type || '';
   if (type === 'data') return saveCurrentData_(e);
 
   var payload = parseSettingsPayload_(e);
@@ -218,9 +219,10 @@ function getEntryIdsFromPrefill_(form, fields) {
 function parseSettingsPayload_(e) {
   if (!e) throw new Error('Brak danych POST.');
 
-  var scope = e.parameter && e.parameter.scope ? e.parameter.scope : 'all';
-  var source = e.parameter && e.parameter.source ? e.parameter.source : 'index.html';
-  var settingsText = e.parameter && e.parameter.settings ? e.parameter.settings : '';
+  var params = parsePostParams_(e);
+  var scope = params.scope || 'all';
+  var source = params.source || 'index.html';
+  var settingsText = params.settings || '';
 
   if (!settingsText && e.postData && e.postData.contents) {
     var body = e.postData.contents;
@@ -243,9 +245,10 @@ function parseSettingsPayload_(e) {
 }
 
 function saveCurrentData_(e) {
-  var snapshotText = e.parameter && e.parameter.snapshot ? e.parameter.snapshot : '';
-  var summary = e.parameter && e.parameter.summary ? e.parameter.summary : '';
-  var health = e.parameter && e.parameter.health ? e.parameter.health : '';
+  var params = parsePostParams_(e);
+  var snapshotText = params.snapshot || '';
+  var summary = params.summary || '';
+  var health = params.health || '';
 
   if (!snapshotText && e.postData && e.postData.contents) {
     var body = e.postData.contents;
@@ -279,6 +282,36 @@ function saveCurrentData_(e) {
     ok: true,
     updatedAt: current.updatedAt
   });
+}
+
+function parsePostParams_(e) {
+  var params = {};
+  if (e && e.parameter) {
+    Object.keys(e.parameter).forEach(function(key) {
+      params[key] = e.parameter[key];
+    });
+  }
+
+  if (Object.keys(params).length > 0 || !e || !e.postData || !e.postData.contents) {
+    return params;
+  }
+
+  var body = e.postData.contents;
+  if (body.indexOf('=') === -1) return params;
+
+  body.split('&').forEach(function(part) {
+    if (!part) return;
+    var eq = part.indexOf('=');
+    var rawKey = eq >= 0 ? part.slice(0, eq) : part;
+    var rawValue = eq >= 0 ? part.slice(eq + 1) : '';
+    var key = decodeFormComponent_(rawKey);
+    params[key] = decodeFormComponent_(rawValue);
+  });
+  return params;
+}
+
+function decodeFormComponent_(value) {
+  return decodeURIComponent(String(value || '').replace(/\+/g, ' '));
 }
 
 function validateSettings_(settings) {

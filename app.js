@@ -3,7 +3,7 @@
 // =========================================
 
 const DEFAULT_GOOGLE_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe/pub?output=csv";
-const GOOGLE_SETTINGS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwTJzaqg-AXMZRT2Lg0w12xt_CbV5igs6v9mejUmPGeTf_viHZqkMe1hbjJ4Ea-BtID/exec";
+const GOOGLE_SETTINGS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzr6hSFnbyXZHB9idDSpMVYkce5BbTTWmqH8xREav1L3kqLUJag5OGRBxfwZbSY-wJO/exec";
 const GOOGLE_DATA_POLL_INTERVAL_MS = 30000;
 
 const state = {
