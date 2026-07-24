@@ -245,6 +245,7 @@ function updateGoogleLastEntry(row) {
     setText('googleLastSummary', row[2] || googleLegacySummary(row));
     setText('googleLastHealth', row[3] || googleLegacyHealth(row));
     setText('googleLastSnapshot', JSON.stringify(snapshot, null, 2));
+    renderGoogleAllData(snapshot);
 }
 
 function snapshotFromGoogleRow(row) {
@@ -314,6 +315,119 @@ function googleSnapshotToAppData(snapshot) {
         outdoorTemp: numOrNull(temps.outdoor),
         health
     };
+}
+
+function renderGoogleAllData(snapshot) {
+    const container = getEl('googleAllData');
+    if (!container) return;
+
+    container.innerHTML = '';
+    const sections = Object.entries(snapshot || {}).filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value));
+
+    if (!sections.length) {
+        const empty = document.createElement('div');
+        empty.className = 'snapshot-empty';
+        empty.textContent = 'Brak pełnego snapshotu w ostatnim wpisie.';
+        container.appendChild(empty);
+        return;
+    }
+
+    sections.forEach(([sectionName, sectionValue]) => {
+        const section = document.createElement('div');
+        section.className = 'snapshot-section';
+
+        const title = document.createElement('div');
+        title.className = 'snapshot-section-title';
+        title.textContent = googleSectionLabel(sectionName);
+        section.appendChild(title);
+
+        Object.entries(sectionValue).forEach(([key, value]) => {
+            const row = document.createElement('div');
+            row.className = 'snapshot-row';
+
+            const keyEl = document.createElement('div');
+            keyEl.className = 'snapshot-key';
+            keyEl.textContent = googleFieldLabel(key);
+
+            const valueEl = document.createElement('div');
+            valueEl.className = 'snapshot-value';
+            valueEl.textContent = formatSnapshotValue(value);
+
+            row.appendChild(keyEl);
+            row.appendChild(valueEl);
+            section.appendChild(row);
+        });
+
+        container.appendChild(section);
+    });
+}
+
+function googleSectionLabel(sectionName) {
+    const labels = {
+        temps: 'Temperatury',
+        settings: 'Nastawy',
+        state: 'Stany wyjść i pracy',
+        automation: 'Automatyka',
+        health: 'Zdrowie czujników',
+        wifi: 'WiFi'
+    };
+    return labels[sectionName] || sectionName;
+}
+
+function googleFieldLabel(key) {
+    const labels = {
+        bufferTop: 'Bufor góra',
+        bufferBottom: 'Bufor dół',
+        collector: 'Kolektor',
+        waterTop: 'Woda góra',
+        waterBottom: 'Woda dół',
+        house: 'Dom',
+        mixer: 'Za mieszaczem',
+        return: 'Powrót',
+        outdoor: 'Zewnętrzna',
+        maxWaterTemp: 'Max temp. wody',
+        solarDeltaOn: 'Solary delta wł.',
+        solarDeltaOff: 'Solary delta wył.',
+        maxBufferTemp: 'Max temp. bufora',
+        wodaBuforDeltaOn: 'Woda->bufor delta wł.',
+        wodaBuforDeltaOff: 'Woda->bufor delta wył.',
+        buforWodaDeltaOn: 'Bufor->woda delta wł.',
+        buforWodaDeltaOff: 'Bufor->woda delta wył.',
+        minWodaTemp: 'Min temp. wody',
+        coMaxMixerTemp: 'CO max za mieszaczem',
+        coTargetTemp: 'CO temp. zadana',
+        coDeltaOn: 'CO delta wł.',
+        coDeltaOff: 'CO delta wył.',
+        solarPumpActive: 'Pompa solarna',
+        bufferPumpActive: 'Pompa obiegu',
+        valveOpen: 'Zawór',
+        direction: 'Kierunek',
+        coPumpActive: 'Pompa CO',
+        mixerPercent: 'Mieszacz',
+        mixerRunning: 'Mieszacz pracuje',
+        mixerDirection: 'Kierunek mieszacza',
+        coPhase: 'Faza CO',
+        isMixerResetting: 'Reset mieszacza',
+        autoCoEnabled: 'Auto CO',
+        autoSolarEnabled: 'Auto solary',
+        autoWbEnabled: 'Auto woda->bufor',
+        autoBwEnabled: 'Auto bufor->woda',
+        solarTempsOk: 'Czujniki solarów',
+        bufferTempsOk: 'Czujniki bufora',
+        coTempsOk: 'Czujniki CO',
+        anyTempError: 'Błąd temperatur',
+        ip: 'IP',
+        rssi: 'RSSI'
+    };
+    return labels[key] || key;
+}
+
+function formatSnapshotValue(value) {
+    if (value === null || value === undefined || value === '') return '--';
+    if (typeof value === 'boolean') return value ? 'Tak' : 'Nie';
+    if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(1);
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
 }
 
 function numOrNull(value) {
@@ -812,6 +926,9 @@ if (typeof module !== 'undefined') {
         getLastDataRow,
         snapshotFromGoogleRow,
         googleSnapshotToAppData,
+        googleSectionLabel,
+        googleFieldLabel,
+        formatSnapshotValue,
         formatGoogleTemp,
         parseCsv,
         isDeltaValid,

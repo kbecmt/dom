@@ -7,6 +7,9 @@ const {
   getLastDataRow,
   snapshotFromGoogleRow,
   googleSnapshotToAppData,
+  googleSectionLabel,
+  googleFieldLabel,
+  formatSnapshotValue,
   formatGoogleTemp,
   parseCsv,
   isDeltaValid
@@ -46,8 +49,13 @@ assert.equal(appData.buffer.direction, 'woda->bufor');
 assert.equal(appData.co.targetTemp, 21.5);
 assert.equal(appData.co.autoCoEnabled, false);
 assert.equal(appData.outdoorTemp, 7);
+assert.equal(googleSectionLabel('settings'), 'Nastawy');
+assert.equal(googleFieldLabel('coTargetTemp'), 'CO temp. zadana');
+assert.equal(formatSnapshotValue(true), 'Tak');
+assert.equal(formatSnapshotValue(21.55), '21.6');
 
 assert.doesNotMatch(appSource, /fetch\(`\$\{API_BASE\}\/api\//);
 assert.doesNotMatch(appSource, /\/api\/data/);
+assert.match(appSource, /function renderGoogleAllData\(snapshot\)/);
 
 console.log('app tests ok');

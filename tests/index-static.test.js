@@ -15,6 +15,7 @@ for (const id of [
   'googleLastWaterBottom',
   'googleLastSummary',
   'googleLastHealth',
+  'googleAllData',
   'googleLastSnapshot',
   'btnGoogleRefresh'
 ]) {

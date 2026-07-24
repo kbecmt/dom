@@ -364,6 +364,59 @@ header h1 {
     margin-top: 12px;
 }
 
+.section-title {
+    margin: 16px 0 10px;
+    color: #4a5568;
+    font-size: 14px;
+}
+
+.snapshot-sections {
+    display: grid;
+    gap: 10px;
+}
+
+.snapshot-section {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f7fafc;
+    overflow: hidden;
+}
+
+.snapshot-section-title {
+    padding: 9px 12px;
+    background: #edf2f7;
+    color: #4a5568;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.snapshot-row {
+    display: grid;
+    grid-template-columns: minmax(130px, 1fr) minmax(120px, 1.2fr);
+    gap: 10px;
+    padding: 8px 12px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.snapshot-key {
+    color: #718096;
+    font-size: 13px;
+}
+
+.snapshot-value {
+    color: #2d3748;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.snapshot-empty {
+    color: #718096;
+    font-size: 13px;
+}
+
 .snapshot-preview {
     overflow: auto;
     max-height: 220px;
