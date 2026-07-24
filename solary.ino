@@ -18,7 +18,6 @@
 #define WIFI_STATUS_LOG_INTERVAL_MS 30000
 #define WIFI_RETRY_INTERVAL_MS 30000
 #define WIFI_SCAN_INTERVAL_MS 120000
-#define WIFI_SCAN_SKIP_LOG_INTERVAL_MS 30000
 
 #define GOOGLE_WEB_APP_URL "https://script.google.com/macros/s/AKfycbzr6hSFnbyXZHB9idDSpMVYkce5BbTTWmqH8xREav1L3kqLUJag5OGRBxfwZbSY-wJO/exec"
 #define GOOGLE_DATA_URL GOOGLE_WEB_APP_URL
@@ -144,6 +143,7 @@ struct AutomationState
 void connectToWiFi();
 void handleWiFi();
 const char *wifiStatusName(wl_status_t status);
+const char *wifiAuthModeName(wifi_auth_mode_t authMode);
 void logWiFiScanResults();
 bool readTemps();
 void updateControl();
@@ -524,6 +524,27 @@ const char *wifiStatusName(wl_status_t status)
     }
 }
 
+const char *wifiAuthModeName(wifi_auth_mode_t authMode)
+{
+    switch (authMode)
+    {
+    case WIFI_AUTH_OPEN:
+        return "OPEN";
+    case WIFI_AUTH_WEP:
+        return "WEP";
+    case WIFI_AUTH_WPA_PSK:
+        return "WPA";
+    case WIFI_AUTH_WPA2_PSK:
+        return "WPA2";
+    case WIFI_AUTH_WPA_WPA2_PSK:
+        return "WPA/WPA2";
+    case WIFI_AUTH_WPA2_ENTERPRISE:
+        return "WPA2_ENTERPRISE";
+    default:
+        return "UNKNOWN";
+    }
+}
+
 void connectToWiFi()
 {
     static bool wifiConfigured = false;
@@ -538,6 +559,7 @@ void connectToWiFi()
         Serial.print("WiFi MAC: ");
         Serial.println(WiFi.macAddress());
         Serial.printf("WiFi konfiguracja: SSID=%s, hasło=%u znaków, DHCP\n", WIFI_SSID, strlen(WIFI_PASSWORD));
+        Serial.println("WiFi uwaga: ESP32 widzi tylko sieci 2.4 GHz; 5 GHz nie pojawi się w skanie.");
         wifiConfigured = true;
     }
 
@@ -573,24 +595,14 @@ void connectToWiFi()
 void logWiFiScanResults()
 {
     static unsigned long lastScan = 0;
-    static unsigned long lastSkipLog = 0;
     static bool firstScan = true;
     unsigned long now = millis();
 
     if (!firstScan && now - lastScan < WIFI_SCAN_INTERVAL_MS)
-    {
-        if (now - lastSkipLog >= WIFI_SCAN_SKIP_LOG_INTERVAL_MS)
-        {
-            lastSkipLog = now;
-            unsigned long nextScanMs = WIFI_SCAN_INTERVAL_MS - (now - lastScan);
-            Serial.printf("WiFi scan: pomijam, ostatni skan był niedawno; pełny skan za %lus.\n", nextScanMs / 1000);
-        }
         return;
-    }
 
     firstScan = false;
     lastScan = now;
-    lastSkipLog = now;
 
     Serial.printf("WiFi scan: szukam SSID=%s...\n", WIFI_SSID);
     int count = WiFi.scanNetworks(false, true);
@@ -601,20 +613,28 @@ void logWiFiScanResults()
     }
 
     bool foundTarget = false;
+    int hiddenNetworks = 0;
     Serial.printf("WiFi scan: znaleziono %d sieci.\n", count);
     for (int i = 0; i < count; i++)
     {
         String ssid = WiFi.SSID(i);
         int32_t rssi = WiFi.RSSI(i);
         int32_t channel = WiFi.channel(i);
+        wifi_auth_mode_t authMode = WiFi.encryptionType(i);
         bool target = ssid == WIFI_SSID;
+        if (ssid.length() == 0)
+            hiddenNetworks++;
         foundTarget = foundTarget || target;
-        Serial.printf("WiFi scan: %sSSID=%s, RSSI=%d dBm, kanał=%d\n",
+        Serial.printf("WiFi scan: %sSSID=%s, RSSI=%d dBm, kanał=%d, auth=%s, BSSID=%s\n",
                       target ? "CEL " : "",
-                      ssid.c_str(),
+                      ssid.length() > 0 ? ssid.c_str() : "<ukryta>",
                       rssi,
-                      channel);
+                      channel,
+                      wifiAuthModeName(authMode),
+                      WiFi.BSSIDstr(i).c_str());
     }
+    if (hiddenNetworks > 0)
+        Serial.printf("WiFi scan: wykryto %d ukrytych sieci; jeśli ITway.dev jest ukryta, nazwa nie pokaże się na liście.\n", hiddenNetworks);
     Serial.printf("WiFi scan: docelowa sieć %s.\n", foundTarget ? "WIDOCZNA" : "NIEWIDOCZNA");
     WiFi.scanDelete();
 }
