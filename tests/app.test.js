@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   DEFAULT_GOOGLE_CSV_URL,
+  GOOGLE_DATA_POLL_INTERVAL_MS,
   buildGoogleCsvProxyUrl,
   getLastDataRow,
   snapshotFromGoogleRow,
@@ -13,6 +14,7 @@ const {
   formatSnapshotValue,
   formatGoogleTemp,
   parseCsv,
+  buildSettingsPayload,
   isDeltaValid
 } = require('../app.js');
 
@@ -24,6 +26,7 @@ assert.equal(isDeltaValid(3, 4), false);
 assert.equal(isDeltaValid(Number.NaN, 1), false);
 
 assert.match(DEFAULT_GOOGLE_CSV_URL, /2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe\/pub\?output=csv/);
+assert.equal(GOOGLE_DATA_POLL_INTERVAL_MS, 30000);
 assert.equal(
   buildGoogleCsvProxyUrl('https://example.com/a?b=1'),
   'https://api.allorigins.win/raw?url=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1'
@@ -60,9 +63,48 @@ assert.equal(googleFieldLabel('coTargetTemp'), 'CO temp. zadana');
 assert.equal(googleFieldLabel('googleFormLogPending'), 'Zapis Google oczekuje');
 assert.equal(formatSnapshotValue(true), 'Tak');
 assert.equal(formatSnapshotValue(21.55), '21.6');
+assert.deepEqual(buildSettingsPayload({
+  maxWaterTemp: '70',
+  solarDeltaOn: '8',
+  solarDeltaOff: '4',
+  maxBufferTemp: '85',
+  wodaBuforDeltaOn: '6',
+  wodaBuforDeltaOff: '3',
+  buforWodaDeltaOn: '7',
+  buforWodaDeltaOff: '3',
+  minWodaTemp: '35',
+  coMaxMixerTemp: '45',
+  coTargetTemp: '22',
+  coDeltaOn: '0.5',
+  coDeltaOff: '0.2',
+  autoCoEnabled: true,
+  autoSolarEnabled: false,
+  autoWbEnabled: true,
+  autoBwEnabled: true
+}, { autoCoEnabled: false }), {
+  maxWaterTemp: 70,
+  solarDeltaOn: 8,
+  solarDeltaOff: 4,
+  maxBufferTemp: 85,
+  wodaBuforDeltaOn: 6,
+  wodaBuforDeltaOff: 3,
+  buforWodaDeltaOn: 7,
+  buforWodaDeltaOff: 3,
+  minWodaTemp: 35,
+  coMaxMixerTemp: 45,
+  coTargetTemp: 22,
+  coDeltaOn: 0.5,
+  coDeltaOff: 0.2,
+  autoCoEnabled: false,
+  autoSolarEnabled: false,
+  autoWbEnabled: true,
+  autoBwEnabled: true
+});
 
 assert.doesNotMatch(appSource, /fetch\(`\$\{API_BASE\}\/api\//);
 assert.doesNotMatch(appSource, /\/api\/data/);
 assert.match(appSource, /function renderGoogleAllData\(snapshot\)/);
+assert.match(appSource, /GOOGLE_SETTINGS_WEB_APP_URL/);
+assert.match(appSource, /function sendSettingsToGoogle\(scope, settings\)/);
 
 console.log('app tests ok');

@@ -3,12 +3,15 @@
 // =========================================
 
 const DEFAULT_GOOGLE_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTIo-0UREaUUsQabhvwHKmc9aE2vw-BZrLc5sER3FumTxucXr35FQ4Q-y-fnu6b8gBbCz2ieFgFKaHe/pub?output=csv";
+const GOOGLE_SETTINGS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwnXUly2oKjJfwnhEGTOTIil9v9TtrM6m93VhLxWVTaVIdmA-iGwgYXDKYZm6A56Uc3/exec";
+const GOOGLE_DATA_POLL_INTERVAL_MS = 30000;
 
 const state = {
     connected: false,
     pollingInterval: null,
     simMode: false,
-    initialized: false
+    initialized: false,
+    lastData: null
 };
 
 // Cache dla elementów DOM, aby nie szukać ich przy każdej aktualizacji
@@ -109,7 +112,7 @@ function disableSimulation() {
 
 function startPolling() {
     if (state.pollingInterval) clearInterval(state.pollingInterval);
-    state.pollingInterval = setInterval(fetchData, 60000);
+    state.pollingInterval = setInterval(fetchData, GOOGLE_DATA_POLL_INTERVAL_MS);
 }
 
 function setupEventListeners() {
@@ -682,6 +685,7 @@ function simulateData() {
 // ============= AKTUALIZACJA UI =============
 
 function updateAll(data) {
+    state.lastData = data;
     const sol = data.solar;
     const buf = data.buffer;
 
@@ -909,7 +913,13 @@ async function controlAutomation(system, enable) {
         fetchData();
         return;
     }
-    showAlert('ℹ️', 'Tryb odczytu', 'Index.html pobiera dane tylko z Google Forms. Sterowanie automatyką przez IP jest wyłączone.');
+    const overrides = {};
+    if (system === 'co') overrides.autoCoEnabled = enable;
+    if (system === 'solar') overrides.autoSolarEnabled = enable;
+    if (system === 'wb') overrides.autoWbEnabled = enable;
+    if (system === 'bw') overrides.autoBwEnabled = enable;
+    await sendSettingsToGoogle(`automation:${system}`, buildSettingsPayload(readSettingsValuesFromInputs(), overrides));
+    showAlert('✅', 'Wysłano', `${names[system] || system} została ${action}. ESP pobierze zmianę z Google przy następnym odczycie ustawień.`);
 }
 
 // ============= ZAPIS =============
@@ -926,31 +936,97 @@ function validateDelta(on, off, label) {
     if (!isDeltaValid(on, off)) { showAlert('⚠️', 'Błąd', `Delta wyłączenia ${label} musi być mniejsza niż delta włączenia`); return false; }
     return true;
 }
+function boolFromLastData(path, fallback) {
+    const co = state.lastData && state.lastData.co ? state.lastData.co : {};
+    return typeof co[path] === 'boolean' ? co[path] : fallback;
+}
+function readSettingsValuesFromInputs() {
+    return {
+        maxWaterTemp: val('maxWaterTemp'),
+        solarDeltaOn: val('solarDeltaOn'),
+        solarDeltaOff: val('solarDeltaOff'),
+        maxBufferTemp: val('maxBufferTemp'),
+        wodaBuforDeltaOn: val('wodaBuforDeltaOn'),
+        wodaBuforDeltaOff: val('wodaBuforDeltaOff'),
+        buforWodaDeltaOn: val('buforWodaDeltaOn'),
+        buforWodaDeltaOff: val('buforWodaDeltaOff'),
+        minWodaTemp: val('minWodaTemp'),
+        coMaxMixerTemp: val('coMaxMixerTemp'),
+        coTargetTemp: val('coTargetTemp'),
+        coDeltaOn: val('coDeltaOn'),
+        coDeltaOff: val('coDeltaOff'),
+        autoCoEnabled: boolFromLastData('autoCoEnabled', true),
+        autoSolarEnabled: boolFromLastData('autoSolarEnabled', true),
+        autoWbEnabled: boolFromLastData('autoWbEnabled', true),
+        autoBwEnabled: boolFromLastData('autoBwEnabled', true)
+    };
+}
+function buildSettingsPayload(values, overrides = {}) {
+    return {
+        maxWaterTemp: Number(values.maxWaterTemp),
+        solarDeltaOn: Number(values.solarDeltaOn),
+        solarDeltaOff: Number(values.solarDeltaOff),
+        maxBufferTemp: Number(values.maxBufferTemp),
+        wodaBuforDeltaOn: Number(values.wodaBuforDeltaOn),
+        wodaBuforDeltaOff: Number(values.wodaBuforDeltaOff),
+        buforWodaDeltaOn: Number(values.buforWodaDeltaOn),
+        buforWodaDeltaOff: Number(values.buforWodaDeltaOff),
+        minWodaTemp: Number(values.minWodaTemp),
+        coMaxMixerTemp: Number(values.coMaxMixerTemp),
+        coTargetTemp: Number(values.coTargetTemp),
+        coDeltaOn: Number(values.coDeltaOn),
+        coDeltaOff: Number(values.coDeltaOff),
+        autoCoEnabled: values.autoCoEnabled !== false,
+        autoSolarEnabled: values.autoSolarEnabled !== false,
+        autoWbEnabled: values.autoWbEnabled !== false,
+        autoBwEnabled: values.autoBwEnabled !== false,
+        ...overrides
+    };
+}
+async function sendSettingsToGoogle(scope, settings) {
+    if (!GOOGLE_SETTINGS_WEB_APP_URL) {
+        showAlert('⚠️', 'Brak adresu Apps Script', 'Wklej URL wdrożenia Web App do GOOGLE_SETTINGS_WEB_APP_URL w app.js.');
+        return false;
+    }
+    const body = new URLSearchParams({
+        type: 'settings',
+        scope,
+        settings: JSON.stringify(settings)
+    });
+    await fetch(GOOGLE_SETTINGS_WEB_APP_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: body.toString()
+    });
+    return true;
+}
 
 async function saveSolarSettings() {
     const maxWT = val('maxWaterTemp'), dOn = val('solarDeltaOn'), dOff = val('solarDeltaOff');
     if (!validateRange(maxWT, 20, 99, 'Max temp. wody') || !validateRange(dOn, 1, 30, 'Delta włączenia') || !validateRange(dOff, 0.5, 20, 'Delta wyłączenia') || !validateDelta(dOn, dOff, 'solarów')) return;
     if (state.simMode) { sim.maxWaterTemp = maxWT; sim.solarDeltaOn = dOn; sim.solarDeltaOff = dOff; showAlert('✅', 'Zapis (sym)', 'Ustawienia solarów zapisane.'); return; }
-    showAlert('ℹ️', 'Tryb odczytu', 'Index.html pobiera dane tylko z Google Forms. Zapis ustawień przez IP jest wyłączony.');
+    if (await sendSettingsToGoogle('solar', buildSettingsPayload(readSettingsValuesFromInputs()))) showAlert('✅', 'Wysłano', 'Ustawienia solarów zapisane w Google. ESP pobierze je przy następnym odczycie ustawień.');
 }
 
 async function saveCoSettings() {
     const maxMixer = val('coMaxMixerTemp'), target = val('coTargetTemp'), dOn = val('coDeltaOn'), dOff = val('coDeltaOff');
     if (!validateRange(maxMixer, 20, 80, 'Max temp. za mieszaczem') || !validateRange(target, 5, 35, 'Temp. zadana w domu') || !validateRange(dOn, 0.1, 20, 'Delta włączenia') || !validateRange(dOff, 0.1, 20, 'Delta wyłączenia') || !validateDelta(dOn, dOff, 'CO')) return;
     if (state.simMode) { sim.coMaxMixerTemp = maxMixer; sim.coTargetTemp = target; sim.coDeltaOn = dOn; sim.coDeltaOff = dOff; showAlert('✅', 'Zapis (sym)', 'Ustawienia CO zapisane.'); return; }
-    showAlert('ℹ️', 'Tryb odczytu', 'Index.html pobiera dane tylko z Google Forms. Zapis ustawień przez IP jest wyłączony.');
+    if (await sendSettingsToGoogle('co', buildSettingsPayload(readSettingsValuesFromInputs()))) showAlert('✅', 'Wysłano', 'Ustawienia CO zapisane w Google. ESP pobierze je przy następnym odczycie ustawień.');
 }
 
 async function saveBufferSettings() {
     const maxBT = val('maxBufferTemp'), wbOn = val('wodaBuforDeltaOn'), wbOff = val('wodaBuforDeltaOff'), bwOn = val('buforWodaDeltaOn'), bwOff = val('buforWodaDeltaOff'), minWT = val('minWodaTemp');
     if (!validateRange(maxBT, 20, 99, 'Max temp. bufora') || !validateRange(wbOn, 1, 30, 'Delta wł. W→B') || !validateRange(wbOff, 0.5, 20, 'Delta wył. W→B') || !validateDelta(wbOn, wbOff, 'W→B') || !validateRange(bwOn, 1, 30, 'Delta wł. B→W') || !validateRange(bwOff, 0.5, 20, 'Delta wył. B→W') || !validateDelta(bwOn, bwOff, 'B→W') || !validateRange(minWT, 20, 80, 'Min temp. wody')) return;
     if (state.simMode) { sim.maxBufferTemp = maxBT; sim.wodaBuforDeltaOn = wbOn; sim.wodaBuforDeltaOff = wbOff; sim.buforWodaDeltaOn = bwOn; sim.buforWodaDeltaOff = bwOff; sim.minWodaTemp = minWT; showAlert('✅', 'Zapis (sym)', 'Ustawienia bufora zapisane.'); return; }
-    showAlert('ℹ️', 'Tryb odczytu', 'Index.html pobiera dane tylko z Google Forms. Zapis ustawień przez IP jest wyłączony.');
+    if (await sendSettingsToGoogle('buffer', buildSettingsPayload(readSettingsValuesFromInputs()))) showAlert('✅', 'Wysłano', 'Ustawienia bufora zapisane w Google. ESP pobierze je przy następnym odczycie ustawień.');
 }
 
 if (typeof module !== 'undefined') {
     module.exports = {
         DEFAULT_GOOGLE_CSV_URL,
+        GOOGLE_DATA_POLL_INTERVAL_MS,
         buildGoogleCsvProxyUrl,
         getLastDataRow,
         snapshotFromGoogleRow,
@@ -961,6 +1037,7 @@ if (typeof module !== 'undefined') {
         formatSnapshotValue,
         formatGoogleTemp,
         parseCsv,
+        buildSettingsPayload,
         isDeltaValid,
         validateDelta
     };

@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Preferences.h> // Wymagane dla trwałego przechowywania ustawień
+#include <ArduinoJson.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -28,7 +29,9 @@ IPAddress secondaryDNS(1, 1, 1, 1);
 #define GOOGLE_FORM_ENTRY_SNAPSHOT_JSON "entry.1561554265"
 #define GOOGLE_FORM_ENTRY_SUMMARY "entry.2118651019"
 #define GOOGLE_FORM_ENTRY_HEALTH "entry.607098449"
-#define GOOGLE_FORM_LOG_INTERVAL_MS 600000
+#define GOOGLE_FORM_LOG_INTERVAL_MS 30000
+#define GOOGLE_SETTINGS_URL "https://script.google.com/macros/s/AKfycbwnXUly2oKjJfwnhEGTOTIil9v9TtrM6m93VhLxWVTaVIdmA-iGwgYXDKYZm6A56Uc3/exec"
+#define GOOGLE_SETTINGS_FETCH_INTERVAL_MS 60000
 
 // ============= PINY GPIO =============
 #define ONE_WIRE_BUS 32
@@ -152,6 +155,10 @@ void updateControl();
 void checkMixerTimer();
 void handleGoogleFormLogging();
 bool sendTempsToGoogleForm();
+void handleGoogleSettings();
+bool fetchSettingsFromGoogle();
+bool applyGoogleSettingsJson(const String &payload);
+bool readJsonFloat(JsonObject settings, const char *key, float minValue, float maxValue, float &target);
 String buildGoogleFormSnapshotJson();
 String buildGoogleFormSummary();
 String buildGoogleFormHealth();
@@ -170,6 +177,8 @@ SolarSystem solar;
 AutomationState automationState;
 unsigned long lastGoogleFormLog = 0;
 bool googleFormLogPending = true;
+unsigned long lastGoogleSettingsFetch = 0;
+String lastGoogleSettingsUpdatedAt = "";
 
 // ============= LittleFS =============
 
@@ -406,6 +415,7 @@ void loop()
 
     handleWiFi();
     handleGoogleFormLogging();
+    handleGoogleSettings();
 
     // Użyj nieblokującego timera do regularnych zadań
     static unsigned long lastUpdate = 0;
@@ -1142,4 +1152,147 @@ bool sendTempsToGoogleForm()
 
     Serial.printf("Google Forms: błąd zapisu (HTTP %d)\n", code);
     return false;
+}
+
+void handleGoogleSettings()
+{
+    if (WiFi.status() != WL_CONNECTED)
+        return;
+
+    if (String(GOOGLE_SETTINGS_URL).length() == 0)
+        return;
+
+    unsigned long now = millis();
+    if (now - lastGoogleSettingsFetch < GOOGLE_SETTINGS_FETCH_INTERVAL_MS)
+        return;
+
+    lastGoogleSettingsFetch = now;
+    fetchSettingsFromGoogle();
+}
+
+bool fetchSettingsFromGoogle()
+{
+    WiFiClientSecure client;
+    HTTPClient http;
+    client.setInsecure();
+
+    if (!http.begin(client, GOOGLE_SETTINGS_URL))
+    {
+        Serial.println("Google Settings: nie można rozpocząć połączenia.");
+        return false;
+    }
+
+    int code = http.GET();
+    if (code <= 0 || code >= 400)
+    {
+        Serial.printf("Google Settings: błąd odczytu (HTTP %d)\n", code);
+        http.end();
+        return false;
+    }
+
+    String payload = http.getString();
+    http.end();
+    return applyGoogleSettingsJson(payload);
+}
+
+bool applyGoogleSettingsJson(const String &payload)
+{
+    DynamicJsonDocument doc(4096);
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err)
+    {
+        Serial.printf("Google Settings: błąd JSON: %s\n", err.c_str());
+        return false;
+    }
+
+    if (doc.containsKey("ok") && doc["ok"] == false)
+    {
+        Serial.println("Google Settings: brak zapisanych ustawień.");
+        return false;
+    }
+
+    String updatedAt = doc["updatedAt"] | "";
+    if (updatedAt.length() > 0 && updatedAt == lastGoogleSettingsUpdatedAt)
+        return true;
+
+    JsonObject settings = doc["settings"];
+    if (settings.isNull())
+    {
+        Serial.println("Google Settings: brak obiektu settings.");
+        return false;
+    }
+
+    float maxWaterTemp, solarDeltaOn, solarDeltaOff;
+    float maxBufferTemp, wodaBuforDeltaOn, wodaBuforDeltaOff;
+    float buforWodaDeltaOn, buforWodaDeltaOff, minWodaTemp;
+    float coMaxMixerTemp, coTargetTemp, coDeltaOn, coDeltaOff;
+
+    if (!readJsonFloat(settings, "maxWaterTemp", 20.0, 99.0, maxWaterTemp) ||
+        !readJsonFloat(settings, "solarDeltaOn", 1.0, 30.0, solarDeltaOn) ||
+        !readJsonFloat(settings, "solarDeltaOff", 0.5, 20.0, solarDeltaOff) ||
+        !readJsonFloat(settings, "maxBufferTemp", 20.0, 99.0, maxBufferTemp) ||
+        !readJsonFloat(settings, "wodaBuforDeltaOn", 1.0, 30.0, wodaBuforDeltaOn) ||
+        !readJsonFloat(settings, "wodaBuforDeltaOff", 0.5, 20.0, wodaBuforDeltaOff) ||
+        !readJsonFloat(settings, "buforWodaDeltaOn", 1.0, 30.0, buforWodaDeltaOn) ||
+        !readJsonFloat(settings, "buforWodaDeltaOff", 0.5, 20.0, buforWodaDeltaOff) ||
+        !readJsonFloat(settings, "minWodaTemp", 20.0, 80.0, minWodaTemp) ||
+        !readJsonFloat(settings, "coMaxMixerTemp", 20.0, 80.0, coMaxMixerTemp) ||
+        !readJsonFloat(settings, "coTargetTemp", 5.0, 35.0, coTargetTemp) ||
+        !readJsonFloat(settings, "coDeltaOn", 0.1, 20.0, coDeltaOn) ||
+        !readJsonFloat(settings, "coDeltaOff", 0.1, 20.0, coDeltaOff))
+    {
+        Serial.println("Google Settings: odrzucono niepełne lub błędne ustawienia.");
+        return false;
+    }
+
+    if (!validateSettings(solarDeltaOn, solarDeltaOff, "solar") ||
+        !validateSettings(wodaBuforDeltaOn, wodaBuforDeltaOff, "woda-bufor") ||
+        !validateSettings(buforWodaDeltaOn, buforWodaDeltaOff, "bufor-woda") ||
+        !validateSettings(coDeltaOn, coDeltaOff, "CO"))
+    {
+        return false;
+    }
+
+    solar.maxWaterTemp = maxWaterTemp;
+    solar.solarDeltaOn = solarDeltaOn;
+    solar.solarDeltaOff = solarDeltaOff;
+    solar.maxBufferTemp = maxBufferTemp;
+    solar.wodaBuforDeltaOn = wodaBuforDeltaOn;
+    solar.wodaBuforDeltaOff = wodaBuforDeltaOff;
+    solar.buforWodaDeltaOn = buforWodaDeltaOn;
+    solar.buforWodaDeltaOff = buforWodaDeltaOff;
+    solar.minWodaTemp = minWodaTemp;
+    solar.coMaxMixerTemp = coMaxMixerTemp;
+    solar.coTargetTemp = coTargetTemp;
+    solar.coDeltaOn = coDeltaOn;
+    solar.coDeltaOff = coDeltaOff;
+
+    automationState.autoCoEnabled = settings["autoCoEnabled"] | automationState.autoCoEnabled;
+    automationState.autoSolarEnabled = settings["autoSolarEnabled"] | automationState.autoSolarEnabled;
+    automationState.autoWbEnabled = settings["autoWbEnabled"] | automationState.autoWbEnabled;
+    automationState.autoBwEnabled = settings["autoBwEnabled"] | automationState.autoBwEnabled;
+
+    saveSettings();
+    lastGoogleSettingsUpdatedAt = updatedAt;
+    Serial.println("Google Settings: ustawienia zastosowane i zapisane.");
+    return true;
+}
+
+bool readJsonFloat(JsonObject settings, const char *key, float minValue, float maxValue, float &target)
+{
+    if (!settings.containsKey(key))
+    {
+        Serial.printf("Google Settings: brak pola %s\n", key);
+        return false;
+    }
+
+    float value = settings[key].as<float>();
+    if (!inRange(value, minValue, maxValue))
+    {
+        Serial.printf("Google Settings: pole %s poza zakresem %.1f..%.1f\n", key, minValue, maxValue);
+        return false;
+    }
+
+    target = value;
+    return true;
 }
