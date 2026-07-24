@@ -18,6 +18,9 @@
 #define WIFI_STATUS_LOG_INTERVAL_MS 30000
 #define WIFI_RETRY_INTERVAL_MS 30000
 #define WIFI_SCAN_INTERVAL_MS 120000
+#define WIFI_SCAN_RETRY_COUNT 3
+#define WIFI_SCAN_RETRY_DELAY_MS 1000
+#define WIFI_VERBOSE_SCAN_LOGS 0
 
 #define GOOGLE_WEB_APP_URL "https://script.google.com/macros/s/AKfycbzr6hSFnbyXZHB9idDSpMVYkce5BbTTWmqH8xREav1L3kqLUJag5OGRBxfwZbSY-wJO/exec"
 #define GOOGLE_DATA_URL GOOGLE_WEB_APP_URL
@@ -144,6 +147,7 @@ void connectToWiFi();
 void handleWiFi();
 const char *wifiStatusName(wl_status_t status);
 const char *wifiAuthModeName(wifi_auth_mode_t authMode);
+String formatEspEfuseMac();
 void logWiFiScanResults(bool forceScan);
 bool readTemps();
 void updateControl();
@@ -480,6 +484,8 @@ void handleWiFi()
             wasConnected = true;
             Serial.print("WiFi połączone. IP: ");
             Serial.println(WiFi.localIP());
+            Serial.print("WiFi MAC: ");
+            Serial.println(WiFi.macAddress());
             Serial.print("WiFi RSSI: ");
             Serial.println(WiFi.RSSI());
         }
@@ -545,6 +551,20 @@ const char *wifiAuthModeName(wifi_auth_mode_t authMode)
     }
 }
 
+String formatEspEfuseMac()
+{
+    uint64_t chipId = ESP.getEfuseMac();
+    char mac[18];
+    snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+             (uint8_t)(chipId >> 40),
+             (uint8_t)(chipId >> 32),
+             (uint8_t)(chipId >> 24),
+             (uint8_t)(chipId >> 16),
+             (uint8_t)(chipId >> 8),
+             (uint8_t)chipId);
+    return String(mac);
+}
+
 void connectToWiFi()
 {
     static bool wifiConfigured = false;
@@ -557,8 +577,8 @@ void connectToWiFi()
         WiFi.persistent(false);
         WiFi.setAutoReconnect(true);
         WiFi.setSleep(false);
-        Serial.print("WiFi MAC: ");
-        Serial.println(WiFi.macAddress());
+        Serial.print("ESP32 eFuse MAC: ");
+        Serial.println(formatEspEfuseMac());
         Serial.printf("WiFi konfiguracja: SSID=%s, hasło=%u znaków, DHCP\n", WIFI_SSID, strlen(WIFI_PASSWORD));
         Serial.println("WiFi uwaga: ESP32 widzi tylko sieci 2.4 GHz; 5 GHz nie pojawi się w skanie.");
         wifiConfigured = true;
@@ -573,17 +593,15 @@ void connectToWiFi()
         credentialsStarted = true;
         connectAttempt++;
         lastConnectAttempt = millis();
-        Serial.printf("WiFi: próba połączenia #%u, status=%d (%s), freeHeap=%uB\n",
+        Serial.printf("WiFi: próba #%u, status=%s, heap=%uB\n",
                       connectAttempt,
-                      status,
                       wifiStatusName(status),
                       ESP.getFreeHeap());
-        Serial.print("Łączę z WiFi...");
         WiFi.disconnect(false, false);
-        delay(200);
+        delay(WIFI_SCAN_RETRY_DELAY_MS);
         logWiFiScanResults(true);
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-        Serial.println(" Rozpoczęto próbę połączenia.");
+        Serial.println("WiFi: rozpoczęto łączenie.");
         return;
     }
 
@@ -592,17 +610,15 @@ void connectToWiFi()
 
     lastConnectAttempt = millis();
     connectAttempt++;
-    Serial.printf("WiFi: ponowne połączenie #%u, status=%d (%s), freeHeap=%uB\n",
+    Serial.printf("WiFi: retry #%u, status=%s, heap=%uB\n",
                   connectAttempt,
-                  status,
                   wifiStatusName(status),
                   ESP.getFreeHeap());
-    Serial.print("WiFi: nadal brak połączenia, ponawiam DHCP...");
     WiFi.disconnect(false, false);
-    delay(200);
+    delay(WIFI_SCAN_RETRY_DELAY_MS);
     logWiFiScanResults(true);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    Serial.println(" nowa próba rozpoczęta.");
+    Serial.println("WiFi: ponowiono łączenie.");
 }
 
 void logWiFiScanResults(bool forceScan)
@@ -617,8 +633,21 @@ void logWiFiScanResults(bool forceScan)
     firstScan = false;
     lastScan = now;
 
-    Serial.printf("WiFi scan: %sSSID=%s...\n", forceScan ? "wymuszony przy reconnect, szukam " : "szukam ", WIFI_SSID);
-    int count = WiFi.scanNetworks(false, true);
+    int count = -1;
+    int scanAttempt = 0;
+    int scanAttemptsUsed = 0;
+    for (scanAttempt = 1; scanAttempt <= WIFI_SCAN_RETRY_COUNT; scanAttempt++)
+    {
+        scanAttemptsUsed = scanAttempt;
+        count = WiFi.scanNetworks(false, true);
+        if (count != 0)
+            break;
+
+        WiFi.scanDelete();
+        if (scanAttempt < WIFI_SCAN_RETRY_COUNT)
+            delay(WIFI_SCAN_RETRY_DELAY_MS);
+    }
+
     if (count < 0)
     {
         Serial.printf("WiFi scan: błąd skanowania (%d).\n", count);
@@ -627,7 +656,10 @@ void logWiFiScanResults(bool forceScan)
 
     bool foundTarget = false;
     int hiddenNetworks = 0;
-    Serial.printf("WiFi scan: znaleziono %d sieci.\n", count);
+    int32_t targetRssi = 0;
+    int32_t targetChannel = 0;
+    String targetBssid = "";
+    wifi_auth_mode_t targetAuthMode = WIFI_AUTH_OPEN;
     for (int i = 0; i < count; i++)
     {
         String ssid = WiFi.SSID(i);
@@ -637,18 +669,37 @@ void logWiFiScanResults(bool forceScan)
         bool target = ssid == WIFI_SSID;
         if (ssid.length() == 0)
             hiddenNetworks++;
-        foundTarget = foundTarget || target;
-        Serial.printf("WiFi scan: %sSSID=%s, RSSI=%d dBm, kanał=%d, auth=%s, BSSID=%s\n",
-                      target ? "CEL " : "",
+        if (target)
+        {
+            foundTarget = true;
+            targetRssi = rssi;
+            targetChannel = channel;
+            targetAuthMode = authMode;
+            targetBssid = WiFi.BSSIDstr(i);
+        }
+#if WIFI_VERBOSE_SCAN_LOGS
+        Serial.printf("WiFi scan: SSID=%s, RSSI=%d dBm, kanał=%d, auth=%s, BSSID=%s\n",
                       ssid.length() > 0 ? ssid.c_str() : "<ukryta>",
                       rssi,
                       channel,
                       wifiAuthModeName(authMode),
                       WiFi.BSSIDstr(i).c_str());
+#endif
     }
-    if (hiddenNetworks > 0)
-        Serial.printf("WiFi scan: wykryto %d ukrytych sieci; jeśli ITway.dev jest ukryta, nazwa nie pokaże się na liście.\n", hiddenNetworks);
-    Serial.printf("WiFi scan: docelowa sieć %s.\n", foundTarget ? "WIDOCZNA" : "NIEWIDOCZNA");
+    if (foundTarget)
+    {
+        Serial.printf("WiFi scan: %d sieci, cel WIDOCZNY, RSSI=%d dBm, kanał=%d, auth=%s, BSSID=%s, ukryte=%d.\n",
+                      count,
+                      targetRssi,
+                      targetChannel,
+                      wifiAuthModeName(targetAuthMode),
+                      targetBssid.c_str(),
+                      hiddenNetworks);
+    }
+    else
+    {
+        Serial.printf("WiFi scan: %d sieci po %d próbach, cel NIEWIDOCZNY, ukryte=%d.\n", count, scanAttemptsUsed, hiddenNetworks);
+    }
     WiFi.scanDelete();
 }
 
@@ -1195,12 +1246,28 @@ String urlEncode(const String &value)
 
 void handleGoogleFormLogging()
 {
+    static unsigned long lastGoogleSkipLog = 0;
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        unsigned long now = millis();
+        if (now - lastGoogleSkipLog >= WIFI_STATUS_LOG_INTERVAL_MS)
+        {
+            lastGoogleSkipLog = now;
+            Serial.println("Google Data: pomijam zapis, WiFi niepołączone.");
+        }
+        return;
+    }
 
     unsigned long now = millis();
     if (!googleFormLogPending && now - lastGoogleFormLog < GOOGLE_FORM_LOG_INTERVAL_MS)
     {
-        unsigned long waitMs = GOOGLE_FORM_LOG_INTERVAL_MS - (now - lastGoogleFormLog);
-        Serial.printf("Google Data: następny zapis za %lus.\n", waitMs / 1000);
+        if (now - lastGoogleSkipLog >= GOOGLE_FORM_LOG_INTERVAL_MS)
+        {
+            lastGoogleSkipLog = now;
+            unsigned long waitMs = GOOGLE_FORM_LOG_INTERVAL_MS - (now - lastGoogleFormLog);
+            Serial.printf("Google Data: następny zapis za %lus.\n", waitMs / 1000);
+        }
         return;
     }
 
